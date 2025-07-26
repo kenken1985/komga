@@ -1,24 +1,23 @@
-
 import os
 import sys
 import tempfile
 import zipfile
 import rarfile
-import requests
+import subprocess
 import io
 from PIL import Image
 from typing import List
+import pillow_avif
 
 # NOTE: You need to install the following python packages:
-# pip install rarfile Pillow requests
+# pip install rarfile Pillow pillow-avif-plugin
 
-# --- Hardcoded configuration for File Browser ---
-FILEBROWSER_URL = "http://192.168.29.55" # CHANGE THIS
-FILEBROWSER_USERNAME = "admin" # CHANGE THIS
-FILEBROWSER_PASSWORD = "xHQ-Kv7z3Yx_b5B3" # CHANGE THIS
-# The remote path on filebrowser where to upload the files.
-# It must exist. For example /books/
-FILEBROWSER_REMOTE_PATH = "/mnt/us/book/" # CHANGE THIS
+# --- Hardcoded configuration for Kindle ---
+KINDLE_IP = "192.168.29.55" # CHANGE THIS
+KINDLE_USER = "root" # CHANGE THIS
+# The remote path on Kindle where to upload the files.
+# It must exist. For example /mnt/us/documents/
+KINDLE_REMOTE_PATH = "/mnt/us/book/" # CHANGE THIS
 
 def get_files_list_from_webui() -> List[str]:
     """
@@ -104,49 +103,50 @@ def convert_images_to_jpg(file_path: str, temp_dir: str) -> str:
 
 def push_to_kindle(file_path: str):
     """
-    Pushes a single file to Kindle using the File Browser API.
+    Pushes a single file to Kindle using scp with no password authentication.
     """
     print(f"--- Debug: Pushing to Kindle ---")
     print(f"File path: {file_path}")
 
-    # 1. Login to get the auth token
-    token = None
-    try:
-        login_url = f"{FILEBROWSER_URL}/api/login"
-        login_data = {"username": FILEBROWSER_USERNAME, "password": FILEBROWSER_PASSWORD}
-        print(f"Attempting to login to: {login_url}")
-        response = requests.post(login_url, json=login_data, timeout=10)
-        print(f"Login response status code: {response.status_code}")
-        response.raise_for_status()
-        token = response.text
-        print(f"Successfully obtained auth token.")
-    except requests.exceptions.RequestException as e:
-        print(f"Error logging into File Browser: {e}")
-        if e.response:
-            print(f"Response content: {e.response.text}")
-        return
-
-    # 2. Upload the file
     try:
         filename = os.path.basename(file_path)
-        upload_url = f"{FILEBROWSER_URL}/api/resources{FILEBROWSER_REMOTE_PATH}{filename}?override=true"
-        headers = {
-            "X-Auth": token,
-        }
-        print(f"Attempting to upload to: {upload_url}")
-        print(f"Upload headers: {headers}")
+        remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}"
+        
+        # Using SSH settings for Kindle connection
+        # Allow password authentication with empty password (dummy pass)
+        # StrictHostKeyChecking=no and UserKnownHostsFile=/dev/null to prevent host key verification
+        # Port=2222 specifies the SSH port for Kindle
+        command = [
+            "sshpass",
+            "-p", "",
+            "scp",
+            "-P", "2222",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            file_path,
+            remote_path
+        ]
+        
+        print(f"Executing command: {' '.join(command)}")
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            print(f"Successfully uploaded {filename} to Kindle.")
+            if result.stdout.strip():
+                print(f"Stdout: {result.stdout}")
+        else:
+            print(f"Error uploading file to Kindle.")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"Stderr: {result.stderr}")
+            if result.stdout:
+                print(f"Stdout: {result.stdout}")
 
-        with open(file_path, 'rb') as f:
-            response = requests.post(upload_url, headers=headers, data=f, timeout=300)
-            print(f"Upload response status code: {response.status_code}")
-            response.raise_for_status()
-
-        print(f"Successfully uploaded {filename} to Kindle.")
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error uploading file to File Browser: {e}")
-        if e.response:
-            print(f"Response content: {e.response.text}")
+    except subprocess.TimeoutExpired:
+        print(f"Upload timed out after 300 seconds")
+    except Exception as e:
+        print(f"An error occurred: {e}")
     finally:
         print(f"--- End Debug ---")
 
