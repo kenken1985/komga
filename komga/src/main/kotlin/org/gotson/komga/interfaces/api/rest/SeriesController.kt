@@ -93,6 +93,7 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 import java.io.OutputStream
+import java.lang.ProcessBuilder
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
 import java.time.ZoneOffset
@@ -874,5 +875,37 @@ class SeriesController(
       seriesMetadataRepository.findById(seriesId).let {
         if (!isContentAllowed(it.ageRating, it.sharingLabels)) throw ResponseStatusException(HttpStatus.FORBIDDEN)
       }
+  }
+
+  @PostMapping("v1/series/{seriesId}/push-to-kindle")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun pushToKindle(
+    @PathVariable seriesId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    principal.user.checkContentRestriction(seriesId)
+
+    val books = bookRepository.findAllBySeriesId(seriesId)
+
+    val bookPaths = books.map { it.url.path }
+
+    if (bookPaths.isEmpty()) {
+      throw ResponseStatusException(HttpStatus.NOT_FOUND, "No books in series")
+    }
+
+    try {
+      val command = mutableListOf("python3", "komga_custom/push_to_kindle.py")
+      command.addAll(bookPaths)
+      val processBuilder = ProcessBuilder(command)
+      processBuilder.redirectErrorStream(true)
+      val process = processBuilder.start()
+      val reader = process.inputStream.bufferedReader()
+      val output = reader.readText()
+      logger.info { "Push to kindle script output: $output" }
+      process.waitFor()
+    } catch (e: Exception) {
+      logger.error(e) { "Error while executing push to kindle script for series: $seriesId" }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
+    }
   }
 }

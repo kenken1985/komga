@@ -202,6 +202,15 @@
                     {{ $t('common.download') }}
                   </v-btn>
                 </v-col>
+                <v-col cols="auto">
+                  <v-btn title="Push to Kindle"
+                         small
+                         @click="pushToKindle"
+                         :disabled="!canDownload">
+                    <v-icon left small>mdi-kindle</v-icon>
+                    PUSH TO KINDLE
+                  </v-btn>
+                </v-col>
               </v-row>
 
               <v-row v-if="series.metadata.summary">
@@ -262,6 +271,15 @@
                    :href="fileUrl">
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
+            </v-btn>
+          </v-col>
+          <v-col cols="auto">
+            <v-btn title="Push to Kindle"
+                   small
+                   @click="pushToKindle"
+                   :disabled="!canDownload">
+              <v-icon left small>mdi-kindle</v-icon>
+              PUSH TO KINDLE
             </v-btn>
           </v-col>
         </v-row>
@@ -1097,6 +1115,21 @@ export default Vue.extend({
     },
     editMultipleBooks() {
       this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
+    },
+    pushToKindle () {
+      this.$komgaSeries.pushToKindle(this.seriesId)
+        .then(() => {
+          this.$store.dispatch('snackbar/show', {
+            message: 'Series has been sent to Kindle',
+            color: 'success',
+          })
+        })
+        .catch(e => {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
+          })
+        })
     },
     bulkEditMultipleBooks() {
       this.$store.dispatch('dialogUpdateBulkBooks', this.$_.sortBy(this.selectedBooks, ['metadata.numberSort']))

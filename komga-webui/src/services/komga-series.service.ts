@@ -222,4 +222,16 @@ export default class KomgaSeriesService {
       throw new Error(msg)
     }
   }
+
+  async pushToKindle(seriesId: string) {
+    try {
+      await this.http.post(`${API_SERIES}/${seriesId}/push-to-kindle`)
+    } catch (e) {
+      let msg = `An error occurred while trying to push series '${seriesId}' to Kindle`
+      if (e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
 }

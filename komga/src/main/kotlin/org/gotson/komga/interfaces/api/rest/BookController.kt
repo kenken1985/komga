@@ -91,6 +91,7 @@ import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
+import java.lang.ProcessBuilder
 import java.nio.file.NoSuchFileException
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -766,5 +767,34 @@ class BookController(
     @RequestParam(name = "for_bigger_result_only", required = false) forBiggerResultOnly: Boolean = false,
   ) {
     taskEmitter.findBookThumbnailsToRegenerate(forBiggerResultOnly, LOWEST_PRIORITY)
+  }
+
+  @PostMapping("api/v1/books/{bookId}/push-to-kindle")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun pushToKindle(
+    @PathVariable bookId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      val media = mediaRepository.findById(book.id)
+      if (media.status != Media.Status.READY) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book is not ready")
+      }
+
+      try {
+        val processBuilder = ProcessBuilder("python3", "komga_custom/push_to_kindle.py", book.url.path)
+        processBuilder.redirectErrorStream(true)
+        val process = processBuilder.start()
+        val reader = process.inputStream.bufferedReader()
+        val output = reader.readText()
+        logger.info { "Push to kindle script output: $output" }
+        process.waitFor()
+      } catch (e: Exception) {
+        logger.error(e) { "Error while executing push to kindle script for book: $bookId" }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
 }

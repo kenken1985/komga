@@ -222,6 +222,16 @@
                     {{ $t('common.download') }}
                   </v-btn>
                 </v-col>
+
+                <v-col cols="auto">
+                  <v-btn title="Push to Kindle"
+                         small
+                         @click="pushToKindle"
+                         :disabled="!canDownload">
+                    <v-icon left small>mdi-kindle</v-icon>
+                    PUSH TO KINDLE
+                  </v-btn>
+                </v-col>
               </v-row>
 
               <v-row v-if="book.metadata.summary">
@@ -266,6 +276,16 @@
                    :href="fileUrl">
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
+            </v-btn>
+          </v-col>
+
+          <v-col cols="auto">
+            <v-btn title="Push to Kindle"
+                   small
+                   @click="pushToKindle"
+                   :disabled="!canDownload">
+              <v-icon left small>mdi-kindle</v-icon>
+              PUSH TO KINDLE
             </v-btn>
           </v-col>
         </v-row>
@@ -690,6 +710,21 @@ export default Vue.extend({
     },
     editBook() {
       this.$store.dispatch('dialogUpdateBooks', this.book)
+    },
+    pushToKindle () {
+      this.$komgaBooks.pushToKindle(this.book.id)
+        .then(() => {
+          this.$store.dispatch('snackbar/show', {
+            message: 'Book has been sent to Kindle',
+            color: 'success',
+          })
+        })
+        .catch(e => {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
+          })
+        })
     },
     removeFromReadList(readListId: string) {
       const rl = this.readLists.find(x => x.id == readListId)
