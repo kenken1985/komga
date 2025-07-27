@@ -13,12 +13,18 @@ import pillow_avif
 # NOTE: You need to install the following python packages:
 # pip install rarfile Pillow pillow-avif-plugin
 
-# --- Hardcoded configuration for Kindle ---
-KINDLE_IP = "192.168.29.55" # CHANGE THIS
-KINDLE_USER = "root" # CHANGE THIS
-# The remote path on Kindle where to upload the files.
-# It must exist. For example /mnt/us/documents/
-KINDLE_REMOTE_PATH = "/mnt/us/book/Others/" # CHANGE THIS
+# --- Kindle configuration from environment variables ---
+KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
+KINDLE_USER = os.environ.get("KINDLE_USER", "root")
+KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH", "/mnt/us/book/Others/")
+
+# Validate required environment variables
+if not KINDLE_IP or KINDLE_IP == "192.168.29.55":
+    print("Warning: KINDLE_IP not set, using default value. Please set KINDLE_IP environment variable.")
+if not KINDLE_USER or KINDLE_USER == "root":
+    print("Warning: KINDLE_USER not set, using default value. Please set KINDLE_USER environment variable.")
+if not KINDLE_REMOTE_PATH or KINDLE_REMOTE_PATH == "/mnt/us/book/Others/":
+    print("Warning: KINDLE_REMOTE_PATH not set, using default value. Please set KINDLE_REMOTE_PATH environment variable.")
 
 def decode_url_path(url_path: str) -> str:
     """

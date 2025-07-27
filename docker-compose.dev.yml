@@ -9,6 +9,8 @@ services:
       # Mount test library and custom scripts
       - ./test_library:/app/komga_custom/test_library
       - ./komga_custom:/app/komga_custom
+    env_file:
+      - .env
     environment:
       - KOMGA_LIBRARIES_PATHS=/app/komga_custom/test_library
       - SPRING_PROFILES_ACTIVE=dev,noclaim

@@ -6,6 +6,8 @@ services:
       - "25601:25601"
     volumes:
       - ./test_library:/data
+    env_file:
+      - .env
     environment:
       - KOMGA_LIBRARIES_PATHS=/data
       - SPRING_PROFILES_ACTIVE=dev,noclaim

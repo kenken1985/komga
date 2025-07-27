@@ -58,6 +58,7 @@ secret/
 ### Test Library and Docker
 test_library/
 docker-compose.override.yml
+.env
 *.sqlite
 *.sqlite-journal
 *.sqlite-shm

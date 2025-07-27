@@ -30,7 +30,13 @@ run:
 
 # Run container with test library mounted
 run-test:
-	docker run -d -p 25601:25601 -v $(PWD)/test_library:/data -e KOMGA_LIBRARIES_PATHS=/data -e SPRING_PROFILES_ACTIVE=dev,noclaim --name komga-test komga:dev
+	docker run -d -p 25601:25601 -v $(PWD)/test_library:/data \
+		-e KOMGA_LIBRARIES_PATHS=/data \
+		-e SPRING_PROFILES_ACTIVE=dev,noclaim \
+		-e KINDLE_IP=192.168.29.55 \
+		-e KINDLE_USER=root \
+		-e KINDLE_REMOTE_PATH=/mnt/us/book/Others/ \
+		--name komga-test komga:dev
 
 # Run development container with volume mounts
 run-dev:

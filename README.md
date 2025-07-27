@@ -43,6 +43,50 @@ Head over to our [website](https://komga.org) for more information.
 
 Check the [development guidelines](./DEVELOPING.md).
 
+## Kindle Integration
+
+This fork includes a custom Python script for pushing comics to Kindle devices. The script automatically converts comics to Kindle-compatible formats and uploads them via SSH.
+
+### Configuration
+
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and update the Kindle configuration:
+   ```bash
+   # Kindle Configuration
+   KINDLE_IP=192.168.29.55      # Your Kindle's IP address
+   KINDLE_USER=root             # SSH username (usually 'root')
+   KINDLE_REMOTE_PATH=/mnt/us/book/Others/  # Target directory on Kindle
+   ```
+
+3. Make sure your Kindle is jailbroken and has SSH enabled on port 2222.
+
+### Usage
+
+- **Single Book**: Navigate to a book in the web UI and click "Push to Kindle"
+- **Entire Series**: Navigate to a series and click "Push Series to Kindle"
+
+The script will:
+- Convert CBR files to CBZ format
+- Convert non-JPG images to JPG for Kindle compatibility
+- Upload the processed files to your Kindle
+
+### Docker Commands
+
+```bash
+# Build the image
+make build-dev
+
+# Run with test library
+make run-test
+
+# Run development environment
+make run-dev
+```
+
 ## Translation
 
 [![Translation status](https://hosted.weblate.org/widgets/komga/-/webui/horizontal-auto.svg)](https://hosted.weblate.org/engage/komga/)
