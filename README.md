@@ -18,7 +18,7 @@
 - **Kindle Integration**: Push books directly to Kindle devices via SCP
 
 ## Building with Docker Compose
-
+Clone the DEVELOPMENT repo to local and run
 ```bash
 # Build and run the development environment
 docker-compose up -d
