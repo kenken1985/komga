@@ -36,12 +36,13 @@ RUN if [ -f requirements.txt ]; then \
         . /opt/venv/bin/activate && \
         pip3 install --no-cache-dir -r requirements.txt; \
     fi
-# Copy the Python script
-COPY komga_custom/push_to_kindle.py /app/komga_custom/push_to_kindle.py
-# Create a wrapper script to use the virtual environment
 RUN echo '#!/bin/bash\n/opt/venv/bin/python3 "$@"' > /usr/local/bin/python3-venv && \
     chmod +x /usr/local/bin/python3-venv
 # Copy the final JAR (this changes most frequently, so do it last)
 COPY --from=backend-build /app/komga/build/libs/komga-*.jar /app/komga.jar
-EXPOSE 25601
-ENTRYPOINT ["java", "-jar", "/app/komga.jar", "--server.port=25601"] 
+
+# Copy the Python script
+COPY komga_custom/push_to_kindle.py /app/komga_custom/push_to_kindle.py
+# Create a wrapper script to use the virtual environment
+EXPOSE 25600
+ENTRYPOINT ["java", "-jar", "/app/komga.jar"] 

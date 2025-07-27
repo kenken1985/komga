@@ -14,18 +14,18 @@ import pillow_avif
 # pip install rarfile Pillow pillow-avif-plugin
 
 # --- Kindle configuration from environment variables ---
-KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
-KINDLE_USER = os.environ.get("KINDLE_USER", "root")
-KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH", "/mnt/us/book/Others/")
-KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD", "")  # Empty for passwordless auth
-KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT", "2222")
+KINDLE_IP = os.environ.get("KINDLE_IP")
+KINDLE_USER = os.environ.get("KINDLE_USER")
+KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH")
+KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD")  # Empty for passwordless auth
+KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT")
 
 # Validate required environment variables
-if not KINDLE_IP or KINDLE_IP == "192.168.29.55":
+if not KINDLE_IP:
     print("Warning: KINDLE_IP not set, using default value. Please set KINDLE_IP environment variable.")
-if not KINDLE_USER or KINDLE_USER == "root":
+if not KINDLE_USER:
     print("Warning: KINDLE_USER not set, using default value. Please set KINDLE_USER environment variable.")
-if not KINDLE_REMOTE_PATH or KINDLE_REMOTE_PATH == "/mnt/us/book/Others/":
+if not KINDLE_REMOTE_PATH:
     print("Warning: KINDLE_REMOTE_PATH not set, using default value. Please set KINDLE_REMOTE_PATH environment variable.")
 if not KINDLE_SSH_PASSWORD:
     print("Info: KINDLE_SSH_PASSWORD not set, using passwordless SSH authentication.")

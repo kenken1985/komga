@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   komga-dev:
-    image: komga:dev  # Use the built image instead of building from backend-build stage
+    image: komga-kindle:dev  # Use the built image instead of building from backend-build stage
     ports:
-      - "25601:25601"
+      - "25600:25600"
     volumes:
       # Mount test library and custom scripts
       - ./test_library:/app/komga_custom/test_library
@@ -21,7 +21,7 @@ services:
   komga-test:
     build: .
     ports:
-      - "25602:25601"
+      - "25602:25600"
     volumes:
       - ./komga_custom:/app/komga_custom
     environment:

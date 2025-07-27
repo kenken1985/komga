@@ -14,23 +14,23 @@ help:
 
 # Build production image
 build:
-	docker build -t komga:latest .
+	docker build -t komga-kindle:latest .
 
 # Build development image (faster with cache)
 build-dev:
-	docker build -t komga:dev .
+	docker build -t komga-kindle:dev .
 
 # Build production image without cache
 build-prod:
-	docker build --no-cache -t komga:latest .
+	docker build --no-cache -t komga-kindle:latest .
 
 # Run production container
 run:
-	docker run -p 25601:25601 komga:dev
+	docker run -p 25600:25600 komga-kindle:dev
 
 # Run container with test library mounted
 run-test:
-	docker run -d -p 25601:25601 -v $(PWD)/test_library:/data \
+	docker run -d -p 25600:25600 -v $(PWD)/test_library:/data \
 		-e KOMGA_LIBRARIES_PATHS=/data \
 		-e SPRING_PROFILES_ACTIVE=dev,noclaim \
 		-e KINDLE_IP=192.168.29.55 \
@@ -38,11 +38,11 @@ run-test:
 		-e KINDLE_REMOTE_PATH=/mnt/us/book/Others/ \
 		-e KINDLE_SSH_PASSWORD= \
 		-e KINDLE_SSH_PORT=2222 \
-		--name komga-test komga:dev
+		--name komga-test komga-kindle:dev
 
 # Run development container with volume mounts
 run-dev:
-	docker compose -f docker-compose.dev.yml up komga-dev
+	docker compose -f docker-compose.dev.yml up komga-kindle-dev
 
 # Clean up
 clean:
@@ -51,4 +51,4 @@ clean:
 
 # Show logs
 logs:
-	docker compose -f docker-compose.dev.yml logs -f komga-dev 
+	docker compose -f docker-compose.dev.yml logs -f komga-kindle-dev 
