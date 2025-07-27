@@ -5,6 +5,7 @@ import zipfile
 import rarfile
 import subprocess
 import io
+import urllib.parse
 from PIL import Image
 from typing import List
 import pillow_avif
@@ -17,7 +18,19 @@ KINDLE_IP = "192.168.29.55" # CHANGE THIS
 KINDLE_USER = "root" # CHANGE THIS
 # The remote path on Kindle where to upload the files.
 # It must exist. For example /mnt/us/documents/
-KINDLE_REMOTE_PATH = "/mnt/us/book/" # CHANGE THIS
+KINDLE_REMOTE_PATH = "/mnt/us/book/Others/" # CHANGE THIS
+
+def decode_url_path(url_path: str) -> str:
+    """
+    Decode URL-encoded path to actual file system path.
+    """
+    try:
+        # Decode URL-encoded characters
+        decoded_path = urllib.parse.unquote(url_path)
+        return decoded_path
+    except Exception as e:
+        print(f"Error decoding URL path {url_path}: {e}")
+        return url_path
 
 def get_files_list_from_webui() -> List[str]:
     """
@@ -27,7 +40,10 @@ def get_files_list_from_webui() -> List[str]:
     if len(sys.argv) < 2:
         print("Usage: python push_to_kindle.py <file1> <file2> ...")
         sys.exit(1)
-    return sys.argv[1:]
+    
+    # Decode URL-encoded paths
+    decoded_paths = [decode_url_path(path) for path in sys.argv[1:]]
+    return decoded_paths
 
 def convert_cbr_to_cbz(file_path: str, temp_dir: str) -> str:
     """

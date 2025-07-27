@@ -894,7 +894,7 @@ class SeriesController(
     }
 
     try {
-      val command = mutableListOf("python3", "komga_custom/push_to_kindle.py")
+      val command = mutableListOf("python3-venv", "/app/komga_custom/push_to_kindle.py")
       command.addAll(bookPaths)
       val processBuilder = ProcessBuilder(command)
       processBuilder.redirectErrorStream(true)

@@ -784,7 +784,7 @@ class BookController(
       }
 
       try {
-        val processBuilder = ProcessBuilder("python3", "komga_custom/push_to_kindle.py", book.url.path)
+        val processBuilder = ProcessBuilder("python3-venv", "/app/komga_custom/push_to_kindle.py", book.url.path)
         processBuilder.redirectErrorStream(true)
         val process = processBuilder.start()
         val reader = process.inputStream.bufferedReader()

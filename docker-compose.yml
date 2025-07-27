@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  komga_dev:
+    build: .
+    ports:
+      - "25601:25601"
+    volumes:
+      - ./test_library:/data
+    environment:
+      - KOMGA_LIBRARIES_PATHS=/data
+      - SPRING_PROFILES_ACTIVE=dev,noclaim
+      - SERVER_PORT=25601
+    restart: unless-stopped 

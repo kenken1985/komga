@@ -54,3 +54,34 @@ application-oauth2.yml
 ### Conveyor
 output/
 secret/
+
+### Test Library and Docker
+test_library/
+docker-compose.override.yml
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.ipynb_checkpoints/
+
+### Temporary files
+tmp/
+temp/
+
+### Claude AI
+.claude/
+
+### Jupyter Notebooks (optional - uncomment if you don't want to commit them)
+# *.ipynb

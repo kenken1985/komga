@@ -48,6 +48,13 @@ application {
   mainClass = "org.gotson.komga.DesktopApplicationKt"
 }
 
+// Disable git properties generation if the property is set
+if (project.hasProperty("skipGitProperties")) {
+  tasks.named("generateGitProperties") {
+    enabled = false
+  }
+}
+
 // Work around temporary Compose bugs
 configurations.all {
   attributes {

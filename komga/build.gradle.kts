@@ -18,6 +18,19 @@ plugins {
   jacoco
 }
 
+// Configure git properties plugin
+gitProperties {
+  gitPropertiesDir = file("$projectDir/src/main/resources")
+  keys = listOf("git.branch", "git.commit.id", "git.commit.time")
+}
+
+// Disable git properties generation if the property is set
+if (project.hasProperty("skipGitProperties")) {
+  tasks.named("generateGitProperties") {
+    enabled = false
+  }
+}
+
 val benchmarkSourceSet =
   sourceSets.create("benchmark") {
     java {
