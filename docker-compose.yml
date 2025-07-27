@@ -8,10 +8,15 @@ services:
     ports:
       - "25600:25600"
     volumes:
-      # Mount your comic library
-      - ./library:/data
-      # Mount custom scripts if needed
-#      - ./komga_custom:/app/komga_custom
+      # Config Folder
+      - type: bind
+        source: /mnt/dockerHDD/opt/komga
+        target: /config
+      # Library Folder      
+      - type: bind
+        source: /mnt/mainHDD
+        target: /data
+      - type: bind
     env_file:
       - .env
     environment:

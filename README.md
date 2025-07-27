@@ -9,6 +9,23 @@
 
 # ![app icon](./.github/readme-images/app-icon.png) Komga
 
+> **DEVELOPMENT BRANCH NOTICE**: This branch contains experimental features including Kindle integration via Python scripts and AI-generated Dockerfile. These features are not planned for merging to main to prevent polluting the codebase.
+
+## Enhanced Features in DEVELOPMENT Branch
+
+- **CBR to CBZ Conversion**: Automatically converts CBR files to CBZ format for better Kindle compatibility
+- **Image Format Conversion**: Converts AVIF and WebP images to JPG format for Kindle compatibility
+- **Kindle Integration**: Push books directly to Kindle devices via SCP
+
+## Building with Docker Compose
+
+```bash
+# Build and run the development environment
+docker-compose up -d
+```
+
+The Docker setup includes all necessary dependencies for the Python Kindle integration script.
+
 Komga is a media server for your comics, mangas, BDs, magazines and eBooks.
 
 #### Chat on [Discord](https://discord.gg/TdRpkDu)
