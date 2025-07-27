@@ -11,5 +11,7 @@ services:
     environment:
       - KOMGA_LIBRARIES_PATHS=/data
       - SPRING_PROFILES_ACTIVE=dev,noclaim
+      - KINDLE_SSH_PASSWORD=
+      - KINDLE_SSH_PORT=2222
       - SERVER_PORT=25601
     restart: unless-stopped 

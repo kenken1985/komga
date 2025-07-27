@@ -17,6 +17,8 @@ import pillow_avif
 KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
 KINDLE_USER = os.environ.get("KINDLE_USER", "root")
 KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH", "/mnt/us/book/Others/")
+KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD", "")  # Empty for passwordless auth
+KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT", "2222")
 
 # Validate required environment variables
 if not KINDLE_IP or KINDLE_IP == "192.168.29.55":
@@ -25,6 +27,10 @@ if not KINDLE_USER or KINDLE_USER == "root":
     print("Warning: KINDLE_USER not set, using default value. Please set KINDLE_USER environment variable.")
 if not KINDLE_REMOTE_PATH or KINDLE_REMOTE_PATH == "/mnt/us/book/Others/":
     print("Warning: KINDLE_REMOTE_PATH not set, using default value. Please set KINDLE_REMOTE_PATH environment variable.")
+if not KINDLE_SSH_PASSWORD:
+    print("Info: KINDLE_SSH_PASSWORD not set, using passwordless SSH authentication.")
+else:
+    print("Info: Using password-based SSH authentication.")
 
 def decode_url_path(url_path: str) -> str:
     """
@@ -125,7 +131,7 @@ def convert_images_to_jpg(file_path: str, temp_dir: str) -> str:
 
 def push_to_kindle(file_path: str):
     """
-    Pushes a single file to Kindle using scp with no password authentication.
+    Pushes a single file to Kindle using scp with configurable authentication.
     """
     print(f"--- Debug: Pushing to Kindle ---")
     print(f"File path: {file_path}")
@@ -134,20 +140,29 @@ def push_to_kindle(file_path: str):
         filename = os.path.basename(file_path)
         remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}"
         
-        # Using SSH settings for Kindle connection
-        # Allow password authentication with empty password (dummy pass)
-        # StrictHostKeyChecking=no and UserKnownHostsFile=/dev/null to prevent host key verification
-        # Port=2222 specifies the SSH port for Kindle
-        command = [
-            "sshpass",
-            "-p", "",
-            "scp",
-            "-P", "2222",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            file_path,
-            remote_path
-        ]
+        # Build the scp command based on authentication method
+        if KINDLE_SSH_PASSWORD:
+            # Password-based authentication
+            command = [
+                "sshpass",
+                "-p", KINDLE_SSH_PASSWORD,
+                "scp",
+                "-P", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                file_path,
+                remote_path
+            ]
+        else:
+            # Passwordless authentication (using SSH keys)
+            command = [
+                "scp",
+                "-P", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                file_path,
+                remote_path
+            ]
         
         print(f"Executing command: {' '.join(command)}")
         

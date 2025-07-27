@@ -36,6 +36,8 @@ run-test:
 		-e KINDLE_IP=192.168.29.55 \
 		-e KINDLE_USER=root \
 		-e KINDLE_REMOTE_PATH=/mnt/us/book/Others/ \
+		-e KINDLE_SSH_PASSWORD= \
+		-e KINDLE_SSH_PORT=2222 \
 		--name komga-test komga:dev
 
 # Run development container with volume mounts

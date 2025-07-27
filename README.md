@@ -60,9 +60,23 @@ This fork includes a custom Python script for pushing comics to Kindle devices. 
    KINDLE_IP=192.168.29.55      # Your Kindle's IP address
    KINDLE_USER=root             # SSH username (usually 'root')
    KINDLE_REMOTE_PATH=/mnt/us/book/Others/  # Target directory on Kindle
+   
+   # SSH Configuration
+   KINDLE_SSH_PASSWORD=         # Leave empty for passwordless auth (SSH keys)
+   KINDLE_SSH_PORT=2222         # SSH port (usually 2222 for Kindle)
    ```
 
-3. Make sure your Kindle is jailbroken and has SSH enabled on port 2222.
+3. **SSH Authentication Setup:**
+   
+   **Option A: Passwordless Authentication (Recommended)**
+   - Set up SSH keys between your server and Kindle
+   - Leave `KINDLE_SSH_PASSWORD` empty in `.env`
+   
+   **Option B: Password-based Authentication**
+   - Set `KINDLE_SSH_PASSWORD=your_password` in `.env`
+   - Make sure your Kindle has a password set
+
+4. Make sure your Kindle is jailbroken and has SSH enabled on port 2222.
 
 ### Usage
 

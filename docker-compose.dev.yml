@@ -14,6 +14,8 @@ services:
     environment:
       - KOMGA_LIBRARIES_PATHS=/app/komga_custom/test_library
       - SPRING_PROFILES_ACTIVE=dev,noclaim
+      - KINDLE_SSH_PASSWORD=
+      - KINDLE_SSH_PORT=2222
 
   # Alternative: Use the full build for testing
   komga-test:
