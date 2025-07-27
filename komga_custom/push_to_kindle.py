@@ -195,7 +195,7 @@ def main():
     file_paths = get_files_list_from_webui()
     print(f"Processing files: {file_paths}")
 
-    temp_dir = os.path.join(os.path.dirname(__file__), 'tmp')
+    temp_dir = '/tmp'
     os.makedirs(temp_dir, exist_ok=True)
 
     for file_path in file_paths:
