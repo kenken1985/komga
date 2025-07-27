@@ -228,7 +228,7 @@
                          small
                          @click="pushToKindle"
                          :disabled="!canDownload">
-                    <v-icon left small>mdi-kindle</v-icon>
+                    <v-icon left small>mdi-send</v-icon>
                     PUSH TO KINDLE
                   </v-btn>
                 </v-col>
@@ -284,7 +284,7 @@
                    small
                    @click="pushToKindle"
                    :disabled="!canDownload">
-              <v-icon left small>mdi-kindle</v-icon>
+              <v-icon left small>mdi-send</v-icon>
               PUSH TO KINDLE
             </v-btn>
           </v-col>

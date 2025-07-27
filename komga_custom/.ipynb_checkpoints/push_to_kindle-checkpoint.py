@@ -17,7 +17,7 @@ KINDLE_IP = "192.168.29.55" # CHANGE THIS
 KINDLE_USER = "root" # CHANGE THIS
 # The remote path on Kindle where to upload the files.
 # It must exist. For example /mnt/us/documents/
-KINDLE_REMOTE_PATH = "/mnt/us/book/" # CHANGE THIS
+KINDLE_REMOTE_PATH = "/mnt/us/book/Others/" # CHANGE THIS
 
 def get_files_list_from_webui() -> List[str]:
     """
