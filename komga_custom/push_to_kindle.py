@@ -223,7 +223,7 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
     Returns:
         bool: True if processing succeeded, False otherwise
     """
-    kcc_script = "kcc-c2e.py"
+    kcc_script = "/app/komga_custom/kcc-c2e.py"
     
     if not os.path.exists(kcc_script):
         print(f"Error: KCC script not found at {kcc_script}")

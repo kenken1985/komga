@@ -44,6 +44,8 @@ The push-to-kindle feature uses a Python-based implementation with the following
 
 ## **NOT IMPLEMENTED**
 - **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar was never implemented
+"I want to implement the PUSH TO KINDLE button on MultiSelectbar.vue, in a similar fashion to push selected book location to push_to_kindle.py. Put it on the most left of existing icon also use same icon as the PUSH TO KINDLE button on BrowseSeries.vue"
+
 
 ## **STATUS**: **PRODUCTION READY v2.0** ✅
 All planned features have been implemented and tested successfully. Version 2.0 is now in production.
