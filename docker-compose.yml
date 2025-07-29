@@ -16,7 +16,7 @@ services:
       - type: bind
         source: /mnt/mainHDD
         target: /data
-      - type: bind
+        
     env_file:
       - .env
     environment:

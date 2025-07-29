@@ -25,6 +25,15 @@
 
       <v-spacer/>
 
+      <v-btn icon @click="pushToKindle" v-if="kind === 'books'">
+        <v-tooltip bottom>
+          <template v-slot:activator="{ on }">
+            <v-icon v-on="on">mdi-send</v-icon>
+          </template>
+          <span>{{ $t('menu.push_to_kindle') }}</span>
+        </v-tooltip>
+      </v-btn>
+
       <v-btn icon @click="markRead" v-if="kind === 'books' || kind === 'series'">
         <v-tooltip bottom>
           <template v-slot:activator="{ on }">
@@ -155,6 +164,9 @@ export default Vue.extend({
     },
     doDelete () {
       this.$emit('delete')
+    },
+    pushToKindle () {
+      this.$emit('push-to-kindle', this.value)
     },
   },
 })

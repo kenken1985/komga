@@ -6,8 +6,6 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
-import jakarta.servlet.http.HttpServletRequest
-import jakarta.validation.Valid
 import org.gotson.komga.application.tasks.HIGHEST_PRIORITY
 import org.gotson.komga.application.tasks.HIGH_PRIORITY
 import org.gotson.komga.application.tasks.LOWEST_PRIORITY
@@ -91,6 +89,8 @@ import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.Valid
 import java.lang.ProcessBuilder
 import java.nio.file.NoSuchFileException
 import java.time.LocalDate
@@ -796,5 +796,40 @@ class BookController(
         throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
       }
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Push multiple books to Kindle", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PostMapping("api/v1/books/push-to-kindle")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun pushMultipleBooksToKindle(
+    @Valid @RequestBody request: PushToKindleRequestDto,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    val books = request.bookIds.map { bookId ->
+      bookRepository.findByIdOrNull(bookId)?.let { book ->
+        contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+        val media = mediaRepository.findById(book.id)
+        if (media.status != Media.Status.READY) {
+          throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book $bookId is not ready")
+        }
+        book
+      } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found: $bookId")
+    }
+
+    try {
+      val filePaths = books.map { it.url.path }.toTypedArray()
+      val command = arrayOf("python3-venv", "/app/komga_custom/push_to_kindle.py") + filePaths
+      val processBuilder = ProcessBuilder(*command)
+      processBuilder.redirectErrorStream(true)
+      val process = processBuilder.start()
+      val reader = process.inputStream.bufferedReader()
+      val output = reader.readText()
+      logger.info { "Push to kindle script output: $output" }
+      process.waitFor()
+    } catch (e: Exception) {
+      logger.error(e) { "Error while executing push to kindle script for multiple books" }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
+    }
   }
 }
