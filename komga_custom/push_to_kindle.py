@@ -2,16 +2,14 @@ import os
 import sys
 import tempfile
 import zipfile
-import rarfile
 import subprocess
 import io
 import urllib.parse
 from PIL import Image
 from typing import List
-import pillow_avif
 
 # NOTE: You need to install the following python packages:
-# pip install rarfile Pillow pillow-avif-plugin
+# pip install Pillow
 
 # --- Kindle configuration from environment variables ---
 KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
@@ -57,76 +55,7 @@ def get_files_list_from_webui() -> List[str]:
     decoded_paths = [decode_url_path(path) for path in sys.argv[1:]]
     return decoded_paths
 
-def convert_cbr_to_cbz(file_path: str, temp_dir: str) -> str:
-    """
-    Checks if a file is a .cbr file. If so, converts it to a .cbz file
-    in a temporary directory.
-    Returns the path to the (potentially converted) file.
-    """
-    if not file_path.lower().endswith('.cbr'):
-        return file_path
 
-    print(f"Converting CBR to CBZ: {file_path}")
-    base_filename = os.path.splitext(os.path.basename(file_path))[0]
-    cbz_path = os.path.join(temp_dir, f"{base_filename}.cbz")
-
-    with rarfile.RarFile(file_path) as rf:
-        with zipfile.ZipFile(cbz_path, 'w') as zf:
-            for member in rf.infolist():
-                if member.is_file():
-                    zf.writestr(member.filename, rf.read(member))
-    
-    print(f"Converted to: {cbz_path}")
-    return cbz_path
-
-def convert_images_to_jpg(file_path: str, temp_dir: str) -> str:
-    """
-    Checks the images within a .cbz file. If any are not JPG/JPEG,
-    it converts them to JPG and creates a new .cbz file.
-    """
-    if not file_path.lower().endswith('.cbz'):
-        return file_path
-
-    print(f"Checking images in: {file_path}")
-    needs_conversion = False
-    with zipfile.ZipFile(file_path, 'r') as zf:
-        for member in zf.infolist():
-            if not member.is_dir() and member.filename.lower().endswith(('.webp', '.avif', '.png', '.gif', '.bmp')):
-                needs_conversion = True
-                break
-    
-    if not needs_conversion:
-        print("No image conversion needed.")
-        return file_path
-
-    print("Image conversion needed. Converting to JPG...")
-    base_filename = os.path.splitext(os.path.basename(file_path))[0]
-    new_cbz_path = os.path.join(temp_dir, f"{base_filename}_converted.cbz")
-
-    with zipfile.ZipFile(new_cbz_path, 'w') as new_zf:
-        with zipfile.ZipFile(file_path, 'r') as old_zf:
-            for member in old_zf.infolist():
-                if not member.is_dir():
-                    filename = member.filename
-                    new_filename = os.path.splitext(filename)[0] + '.jpg'
-                    img_bytes = old_zf.read(member)
-                    
-                    if not filename.lower().endswith(('.jpg', '.jpeg')):
-                        try:
-                            with Image.open(io.BytesIO(img_bytes)) as img:
-                                if img.mode == 'RGBA':
-                                    img = img.convert('RGB')
-                                
-                                with io.BytesIO() as output:
-                                    img.save(output, format='JPEG')
-                                    img_bytes = output.getvalue()
-                        except Exception as e:
-                            print(f"Could not convert {filename}: {e}")
-
-                    new_zf.writestr(new_filename, img_bytes)
-
-    print(f"Converted images and saved to: {new_cbz_path}")
-    return new_cbz_path
 
 
 def extract_series_name_from_path(file_path: str) -> str:
@@ -283,6 +212,69 @@ def create_remote_folder(folder_name: str):
     except Exception as e:
         print(f"An error occurred while creating folder: {e}")
 
+def process_with_kcc(book_path: str, output_path: str) -> bool:
+    """
+    Process a comic file using Kindle Comic Converter (KCC).
+    
+    Args:
+        book_path: Path to the comic file (CBZ/CBR)
+        output_path: Directory where processed file should be saved
+        
+    Returns:
+        bool: True if processing succeeded, False otherwise
+    """
+    kcc_script = "kcc-c2e.py"
+    
+    if not os.path.exists(kcc_script):
+        print(f"Error: KCC script not found at {kcc_script}")
+        return False
+    
+    # Get base filename without extension
+    base_filename = os.path.splitext(os.path.basename(book_path))[0]
+    # Create full output path with specific filename
+    output_file_path = os.path.join(output_path, f"{base_filename}_kcc.cbz")
+    
+    print(f"Processing with KCC: {book_path}")
+    print(f"Output file: {output_file_path}")
+    
+    try:
+        command = [
+            "python3",
+            kcc_script,
+            "-p", "KPW5",
+            "-q",
+            "-u",
+            "--mozjpeg",
+            "-f", "CBZ",
+            "-o", output_file_path,
+            book_path
+        ]
+        
+        print(f"Executing KCC command: {' '.join(command)}")
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+        
+        if result.returncode == 0:
+            print("KCC processing completed successfully")
+            if result.stdout.strip():
+                print(f"KCC stdout: {result.stdout}")
+            return True
+        else:
+            print("Error during KCC processing")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"KCC stderr: {result.stderr}")
+            if result.stdout:
+                print(f"KCC stdout: {result.stdout}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("KCC processing timed out after 600 seconds")
+        return False
+    except Exception as e:
+        print(f"Exception during KCC processing: {e}")
+        return False
+
 def main():
     """
     Main function to process and push files to Kindle with folder organization.
@@ -310,14 +302,27 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     for file_path in file_paths:
-        # Step 1: Convert CBR to CBZ if needed
-        processed_path = convert_cbr_to_cbz(file_path, temp_dir)
-        
-        # Step 2: Convert images to JPG if needed
-        processed_path = convert_images_to_jpg(processed_path, temp_dir)
+        # Step 1: Process with KCC (handles all image formats including AVIF/WEBP and CBR files)
+        print(f"Processing {file_path} with Kindle Comic Converter...")
+        kcc_output_dir = temp_dir
+        if process_with_kcc(file_path, kcc_output_dir):
+            # Find the KCC output file with the new naming pattern
+            base_filename = os.path.splitext(os.path.basename(file_path))[0]
+            kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
+            
+            # Use the KCC processed file directly since we specified the exact output filename
+            if os.path.exists(kcc_output_file):
+                final_file = kcc_output_file
+                print(f"Using KCC processed file: {final_file}")
+            else:
+                print("KCC output file not found, using original file")
+                final_file = file_path
+        else:
+            print("KCC processing failed, using original file")
+            final_file = file_path
 
         # Step 3: Push the final file to Kindle with folder organization
-        push_to_kindle(processed_path, target_folder)
+        push_to_kindle(final_file, target_folder)
 
 if __name__ == "__main__":
     main()

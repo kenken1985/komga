@@ -784,7 +784,7 @@ class BookController(
       }
 
       try {
-        val processBuilder = ProcessBuilder("python3-venv", "/app/komga_custom/push_to_kindle.py", book.url.path)
+        val processBuilder = ProcessBuilder("python3", "/app/komga_custom/push_to_kindle.py", book.url.path)
         processBuilder.redirectErrorStream(true)
         val process = processBuilder.start()
         val reader = process.inputStream.bufferedReader()
@@ -819,7 +819,7 @@ class BookController(
 
     try {
       val filePaths = books.map { it.url.path }.toTypedArray()
-      val command = arrayOf("python3-venv", "/app/komga_custom/push_to_kindle.py") + filePaths
+      val command = arrayOf("python3", "/app/komga_custom/push_to_kindle.py") + filePaths
       val processBuilder = ProcessBuilder(*command)
       processBuilder.redirectErrorStream(true)
       val process = processBuilder.start()

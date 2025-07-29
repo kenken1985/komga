@@ -13,28 +13,8 @@
 - Use `pip install` within activated virtual environments
 - For Docker environments, ensure proper isolation
 
-### 2. Virtual Environment Management
-**Rule**: When trying to test run Python codes, check if a virtual environment already exists. If so, use it, else, make one.
-
-**Workflow**:
-1. Check for existing virtual environments:
-   ```bash
-   # Check for common venv directories
-   ls -la | grep -E "(venv|env|\.venv|\.env)"
-   # Check if venv is activated
-   echo $VIRTUAL_ENV
-   ```
-2. If no venv exists, create one:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Unix/macOS
-   # or
-   venv\Scripts\activate     # On Windows
-   ```
-3. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 2. Virtual Environment
+**Rule**: Never try to create virtual environment, if you detect you cannot perform action due to not being in Virtual environment, stop action and ask.
 
 ### 3. Code Modification Philosophy
 **Rule**: When adding new functionality to existing project, try to use existing codebase and make as little change as possible and make as least new function as possible. When introducing changes, make sure to include default setting the mimic the action before change to prevent breaking code and preserve compatibility.

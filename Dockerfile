@@ -49,8 +49,10 @@ RUN apt-get update && \
         python3 \
         python3-pip \
         python3-venv \
-        rar \
-        unrar \
+        python3-pil \
+        python3-psutil \
+        python3-slugify \
+        p7zip-full \
         sshpass && \
     echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
     locale-gen en_US.UTF-8 && \
@@ -77,8 +79,10 @@ RUN apt-get update && \
         python3 \
         python3-pip \
         python3-venv \
-        rar \
-        unrar \
+        python3-pil \
+        python3-psutil \
+        python3-slugify \
+        p7zip-full \
         sshpass && \
     echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
     locale-gen en_US.UTF-8 && \
@@ -104,12 +108,8 @@ COPY --from=builder /builder/extracted/application/ ./
 # Install Python dependencies
 COPY requirements.txt ./
 RUN if [ -f requirements.txt ]; then \
-        python3 -m venv /opt/venv && \
-        . /opt/venv/bin/activate && \
         pip3 install --no-cache-dir -r requirements.txt; \
-    fi && \
-    echo '#!/bin/bash\n/opt/venv/bin/python3 "$@"' > /usr/local/bin/python3-venv && \
-    chmod +x /usr/local/bin/python3-venv
+    fi
 
 # Copy custom Python scripts
 COPY komga_custom/ /app/komga_custom/
