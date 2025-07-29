@@ -6,12 +6,12 @@ The push-to-kindle feature follows a pipeline pattern with these components:
 ### Frontend Components
 - **BrowseBook.vue**: Single book push button
 - **BrowseSeries.vue**: Series push button for multiple books
-- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar
+- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar (NOT IMPLEMENTED)
 
 ### Backend Components
 - **BookController.kt**: REST endpoint `/api/v1/books/{bookId}/kindle`
 - **SeriesController.kt**: REST endpoint `/api/v1/series/{seriesId}/kindle`
-- **BookController.kt**: REST endpoint `/api/v1/books/push-to-kindle` (multiple books)
+- **BookController.kt**: REST endpoint `/api/v1/books/push-to-kindle` (single book)
 - **Python Script**: External process execution via ProcessBuilder
 
 ### External Dependencies

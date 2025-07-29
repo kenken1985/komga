@@ -108,7 +108,7 @@ COPY --from=builder /builder/extracted/application/ ./
 # Install Python dependencies
 COPY requirements.txt ./
 RUN if [ -f requirements.txt ]; then \
-        pip3 install --no-cache-dir -r requirements.txt; \
+        pip3 install --no-cache-dir --break-system-packages -r requirements.txt; \
     fi
 
 # Copy custom Python scripts

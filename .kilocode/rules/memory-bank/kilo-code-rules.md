@@ -3,7 +3,7 @@
 ## Development Environment Rules
 
 ### 1. Package Installation
-**Rule**: Do not use `--break-system-packages` to install packages in system environment.
+**Rule**: Do not use `--break-system-packages` to install packages in system environment. (Unless in a Dockerfile)
 
 **Rationale**: Using `--break-system-packages` can break system Python installations and cause conflicts with system packages. This ensures we maintain a clean development environment.
 
