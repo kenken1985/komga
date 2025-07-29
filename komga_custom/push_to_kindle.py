@@ -14,11 +14,11 @@ import pillow_avif
 # pip install rarfile Pillow pillow-avif-plugin
 
 # --- Kindle configuration from environment variables ---
-KINDLE_IP = os.environ.get("KINDLE_IP")
-KINDLE_USER = os.environ.get("KINDLE_USER")
-KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH")
-KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD")  # Empty for passwordless auth
-KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT")
+KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
+KINDLE_USER = os.environ.get("KINDLE_USER", "root") 
+KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH" ,"/mnt/us/book")
+KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD", "dummy")  # Empty for passwordless auth
+KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT", "2222")
 
 # Validate required environment variables
 if not KINDLE_IP:
@@ -129,16 +129,56 @@ def convert_images_to_jpg(file_path: str, temp_dir: str) -> str:
     return new_cbz_path
 
 
-def push_to_kindle(file_path: str):
+def extract_series_name_from_path(file_path: str) -> str:
     """
-    Pushes a single file to Kindle using scp with configurable authentication.
+    Extract series name from file path by looking for directory structure.
+    Assumes structure: /path/to/library/SeriesName/VolumeName/file.cbz
+    """
+    try:
+        # Check if the path has the expected structure
+        if not file_path:
+            return None
+            
+        # Normalize the path
+        normalized_path = os.path.normpath(file_path)
+        
+        # Split the path
+        parts = normalized_path.split(os.sep)
+        
+        # Check if we have at least 2 parts (series folder and file)
+        if len(parts) < 2:
+            return None
+            
+        # Get the directory containing the file (second to last part)
+        series_name = parts[-2]
+        
+        # Check if series name is empty or just dots
+        if not series_name or series_name == '.' or series_name == '..':
+            return None
+        
+        # Clean up series name for Kindle folder
+        # Remove special characters, limit length
+        clean_name = ''.join(c for c in series_name if c.isalnum() or c in ' -_').strip()
+        return clean_name[:50] if clean_name else None  # Limit to 50 characters
+    except Exception:
+        return None
+
+def push_to_kindle(file_path: str, target_folder: str = None):
+    """
+    Pushes a file to Kindle using scp with configurable authentication and folder organization.
     """
     print(f"--- Debug: Pushing to Kindle ---")
     print(f"File path: {file_path}")
+    print(f"Target folder: {target_folder}")
 
     try:
         filename = os.path.basename(file_path)
-        remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}"
+        
+        # Determine remote path based on target folder
+        if target_folder and target_folder.strip():
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}"
+        else:
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New Volume"
         
         # Build the scp command based on authentication method
         if KINDLE_SSH_PASSWORD:
@@ -169,7 +209,8 @@ def push_to_kindle(file_path: str):
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            print(f"Successfully uploaded {filename} to Kindle.")
+            folder_display = target_folder if target_folder else "New Volume"
+            print(f"Successfully uploaded {filename} to Kindle folder: {folder_display}")
             if result.stdout.strip():
                 print(f"Stdout: {result.stdout}")
         else:
@@ -188,12 +229,82 @@ def push_to_kindle(file_path: str):
         print(f"--- End Debug ---")
 
 
+def create_remote_folder(folder_name: str):
+    """
+    Create folder on Kindle device using ssh.
+    """
+    print(f"Creating folder on Kindle: {folder_name}")
+    
+    try:
+        remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{folder_name}"
+        
+        # Build the ssh command to create directory
+        if KINDLE_SSH_PASSWORD:
+            # Password-based authentication
+            command = [
+                "sshpass",
+                "-p", KINDLE_SSH_PASSWORD,
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
+            ]
+        else:
+            # Passwordless authentication (using SSH keys)
+            command = [
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
+            ]
+        
+        print(f"Executing command: {' '.join(command)}")
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            print(f"Successfully created folder: {folder_name}")
+            if result.stdout.strip():
+                print(f"Stdout: {result.stdout}")
+        else:
+            print(f"Error creating folder on Kindle.")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"Stderr: {result.stderr}")
+            if result.stdout:
+                print(f"Stdout: {result.stdout}")
+
+    except subprocess.TimeoutExpired:
+        print(f"SSH command timed out after 30 seconds")
+    except Exception as e:
+        print(f"An error occurred while creating folder: {e}")
+
 def main():
     """
-    Main function to process and push files to Kindle.
+    Main function to process and push files to Kindle with folder organization.
     """
     file_paths = get_files_list_from_webui()
     print(f"Processing files: {file_paths}")
+
+    # Determine target folder based on number of files
+    target_folder = "New Volume"
+    if len(file_paths) > 1:
+        # For multiple files, try to extract series name from first file
+        series_name = extract_series_name_from_path(file_paths[0])
+        if series_name:
+            target_folder = series_name
+            print(f"Multiple files detected, using series folder: {target_folder}")
+        else:
+            print("Multiple files detected but couldn't determine series, using 'New Volume' folder")
+    else:
+        print("Single file detected, using 'New Volume' folder")
+
+    # Create the target folder on Kindle
+    create_remote_folder(target_folder)
 
     temp_dir = '/tmp'
     os.makedirs(temp_dir, exist_ok=True)
@@ -205,8 +316,8 @@ def main():
         # Step 2: Convert images to JPG if needed
         processed_path = convert_images_to_jpg(processed_path, temp_dir)
 
-        # Step 3: Push the final file to Kindle
-        push_to_kindle(processed_path)
+        # Step 3: Push the final file to Kindle with folder organization
+        push_to_kindle(processed_path, target_folder)
 
 if __name__ == "__main__":
     main()

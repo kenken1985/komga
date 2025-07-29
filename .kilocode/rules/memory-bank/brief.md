@@ -7,7 +7,8 @@ This is a customized version of Komga, a Manga reading server. The customization
 
 Currently, the code is in production status. The following additional function is planned.
 
-1) If multiple files is pushed at once, it will create a folder named as the series name, else, it will push the single files to a folder named "New Volume"
+1) ~~If multiple files is pushed at once, it will create a folder named as the series name, else, it will push the single files to a folder named "New Volume"~~ ✅ **COMPLETED & TESTED**
 2) It add the PUSH TO KINDLE button to the menu that appear when multiple books in same series is selected in WEBUI.
-3) Resize to fill addition margin in black color so that it fit the aspect ratio of kindle paperwhite (1246 x 1648)
-4) Refactor the python code into using native Ktolin, and remove the python part from Dockerfile.
+3) Implement Kindle Comic Converter
+4) Remove AVIF/WEBP Conversion as Kindle Comic Converter natively support AVIF/WEBP
+5) Refactor the python code into using native Ktolin, and remove the python part from Dockerfile.
