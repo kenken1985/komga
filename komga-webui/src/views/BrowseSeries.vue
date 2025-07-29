@@ -50,7 +50,6 @@
       @bulk-edit="bulkEditMultipleBooks"
       @edit="editMultipleBooks"
       @delete="deleteBooks"
-      @push-to-kindle="pushSelectedBooksToKindle"
     />
 
     <filter-drawer
@@ -1124,32 +1123,6 @@ export default Vue.extend({
             message: 'Series has been sent to Kindle',
             color: 'success',
           })
-        })
-        .catch(e => {
-          this.$store.dispatch('snackbar/show', {
-            message: e.message,
-            color: 'error',
-          })
-        })
-    },
-    pushSelectedBooksToKindle(selectedBooks) {
-      if (!selectedBooks || selectedBooks.length === 0) {
-        this.$store.dispatch('snackbar/show', {
-          message: 'No books selected',
-          color: 'warning',
-        })
-        return
-      }
-
-      const bookIds = selectedBooks.map(book => book.id)
-      
-      this.$komgaBooks.pushMultipleToKindle(bookIds)
-        .then(() => {
-          this.$store.dispatch('snackbar/show', {
-            message: `${bookIds.length} book(s) have been sent to Kindle`,
-            color: 'success',
-          })
-          this.selectedBooks = []
         })
         .catch(e => {
           this.$store.dispatch('snackbar/show', {

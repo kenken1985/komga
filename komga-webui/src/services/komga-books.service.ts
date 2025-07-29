@@ -330,16 +330,4 @@ export default class KomgaBooksService {
       throw new Error(msg)
     }
   }
-
-  async pushMultipleToKindle(bookIds: string[]) {
-    try {
-      await this.http.post(`${API_BOOKS}/push-to-kindle`, { bookIds })
-    } catch (e) {
-      let msg = 'An error occurred while trying to push books to Kindle'
-      if (e.response.data.message) {
-        msg += `: ${e.response.data.message}`
-      }
-      throw new Error(msg)
-    }
-  }
 }
