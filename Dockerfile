@@ -1,6 +1,9 @@
 # Stage 1: Build the frontend
 FROM node:18 AS frontend-build
 WORKDIR /app/komga-webui
+
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+
 # Copy package files first for better caching
 COPY komga-webui/package*.json ./
 RUN npm install
