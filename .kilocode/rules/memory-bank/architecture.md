@@ -4,15 +4,28 @@
 The push-to-kindle feature follows a pipeline pattern with these components:
 
 ### Frontend Components
-- **BrowseBook.vue**: Single book push button
-- **BrowseSeries.vue**: Series push button for multiple books
-- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar (NOT IMPLEMENTED)
+- **BrowseBook.vue**: Single book push button ✅ IMPLEMENTED
+  - Location: Lines 227-234 and 283-290
+  - Icon: mdi-send
+  - Function: Calls `this.$komgaBooks.pushToKindle(this.book.id)`
+- **BrowseSeries.vue**: Series push button for multiple books ✅ IMPLEMENTED
+  - Location: Lines 206-213 and 277-284
+  - Icon: mdi-send
+  - Function: Calls `this.$komgaSeries.pushToKindle(this.seriesId)`
+- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar ❌ NOT IMPLEMENTED
+  - Planned: Left-most button with mdi-send icon
+  - Current: No push-to-kindle functionality present
 
 ### Backend Components
-- **BookController.kt**: REST endpoint `/api/v1/books/{bookId}/kindle`
-- **SeriesController.kt**: REST endpoint `/api/v1/series/{seriesId}/kindle`
-- **BookController.kt**: REST endpoint `/api/v1/books/push-to-kindle` (single book)
-- **Python Script**: External process execution via ProcessBuilder
+- **BookController.kt**: REST endpoint `/api/v1/books/{bookId}/push-to-kindle` ✅ IMPLEMENTED
+  - Location: Lines 772-797
+  - Function: Executes Python script with single book path
+- **SeriesController.kt**: REST endpoint `/api/v1/series/{seriesId}/push-to-kindle` ✅ IMPLEMENTED
+  - Location: Lines 880-909
+  - Function: Executes Python script with multiple book paths
+- **Python Script**: External process execution via ProcessBuilder ✅ IMPLEMENTED
+  - Location: `/app/komga_custom/push_to_kindle.py`
+  - Function: Main processing pipeline with KCC integration
 
 ### External Dependencies
 - **RarFile**: CBR file handling

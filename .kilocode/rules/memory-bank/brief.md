@@ -43,9 +43,23 @@ The push-to-kindle feature uses a Python-based implementation with the following
 - `KINDLE_SSH_PORT`: SSH port (default: 2222)
 
 ## **NOT IMPLEMENTED**
-- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar was never implemented
-"I want to implement the PUSH TO KINDLE button on MultiSelectbar.vue, in a similar fashion to push selected book location to push_to_kindle.py. Put it on the most left of existing icon also use same icon as the PUSH TO KINDLE button on BrowseSeries.vue"
+- **MultiSelectBar.vue**: Push button for multiple selected books in the multi-select toolbar is not yet implemented
+  - **Planned Implementation**: Add push-to-kindle button on the most left side of existing icons in MultiSelectBar.vue
+  - **Icon**: Use same icon as the PUSH TO KINDLE button on BrowseSeries.vue (mdi-send)
+  - **Functionality**: Should enable pushing multiple selected books to Kindle in a single operation
 
+## **CURRENT IMPLEMENTATION STATUS**
+
+### **✅ COMPLETED FEATURES**
+1. **Individual Book Push**: BrowseBook.vue has functional push-to-kindle button
+2. **Series Push**: BrowseSeries.vue has functional push-to-kindle button for entire series
+3. **Python Processing**: Complete pipeline with KCC integration and SCP transfer
+4. **Format Support**: Native handling of all image formats including AVIF/WEBP
+5. **Smart Folder Organization**: Series-based folder creation for multiple files
+
+### **🔄 NEXT PHASE**
+- **Multi-Select Push**: Implementation needed for MultiSelectBar.vue to handle bulk book transfers
+- **Push To Kindle Prgress Page**: Add a page that show the progress of tehe files currently pushing to Kindle. 
 
 ## **STATUS**: **PRODUCTION READY v2.0** ✅
-All planned features have been implemented and tested successfully. Version 2.0 is now in production.
+Core functionality is complete and in production. Multi-select feature is planned for future enhancement.

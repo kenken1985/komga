@@ -15,6 +15,8 @@
 - **subprocess**: Process execution for external tools
 - **os/pathlib**: File system operations
 - **tempfile**: Temporary file management
+- **Pillow**: Image processing library (PIL)
+- **urllib**: URL path decoding
 
 ## Environment Variables
 - **KINDLE_IP**: Kindle device IP address
@@ -47,9 +49,12 @@
 - **KCC**: Included in `komga_custom/kindlecomicconverter/`
 - **sshpass**: System package for SSH password authentication
 - **rarfile**: Python package for RAR archive handling
+- **Pillow**: Python package for image processing (PIL)
 
 ## Deployment Notes
 - **Docker**: All dependencies included in container
 - **Environment Variables**: Must be configured for production
 - **SSH Setup**: Ensure SSH access to Kindle is configured
 - **File Permissions**: Ensure read access to Komga library files
+- **KCC Path**: Kindle Comic Converter script located at `/app/komga_custom/kcc-c2e.py`
+- **Python Script**: Main processing script located at `/app/komga_custom/push_to_kindle.py`
