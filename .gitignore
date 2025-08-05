@@ -52,6 +52,7 @@ application-oauth2.yml
 /release_notes
 
 ### Conveyor
+test_crop/
 output/
 secret/
 

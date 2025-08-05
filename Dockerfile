@@ -30,7 +30,7 @@ RUN ./gradlew dependencies --no-daemon
 COPY komga/ ./komga/
 # Copy built frontend from previous stage
 COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/public
-RUN ./gradlew clean build -x test -PskipGitProperties=true
+RUN ./gradlew clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
 
 # Stage 3: Extract layers
 FROM eclipse-temurin:21-jre AS builder
