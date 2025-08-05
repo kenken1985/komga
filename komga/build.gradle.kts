@@ -3,13 +3,14 @@ import org.apache.tools.ant.taskdefs.condition.Os
 import org.flywaydb.gradle.task.FlywayMigrateTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.util.prefixIfNot
+import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 plugins {
   kotlin("jvm")
   kotlin("plugin.spring")
   kotlin("kapt")
-  id("org.springframework.boot") version "3.5.3"
-  id("com.gorylenko.gradle-git-properties") version "2.5.2"
+  id("org.springframework.boot") version libs.versions.springboot.get()
+  alias(libs.plugins.gradleGitProperties)
   id("nu.studer.jooq") version "10.1"
   id("org.flywaydb.flyway") version "11.7.2"
   id("com.github.johnrengelman.processes") version "0.5.0"
@@ -50,7 +51,7 @@ dependencies {
   implementation(kotlin("stdlib"))
   implementation(kotlin("reflect"))
 
-  api(platform("org.springframework.boot:spring-boot-dependencies:3.5.3"))
+  api(platform(SpringBootPlugin.BOM_COORDINATES))
 
   api("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-webflux")
@@ -61,10 +62,10 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
   implementation("org.springframework.boot:spring-boot-starter-jooq")
   implementation("org.springframework.session:spring-session-core")
-  implementation("com.github.gotson:spring-session-caffeine:2.0.0")
+  implementation("com.github.gotson:spring-session-caffeine:2.1.0")
   implementation("org.springframework.data:spring-data-commons")
 
-  kapt("org.springframework.boot:spring-boot-configuration-processor:3.5.3")
+  kapt("org.springframework.boot:spring-boot-configuration-processor:${libs.versions.springboot.get()}")
 
   implementation("org.flywaydb:flyway-core")
 
@@ -79,14 +80,10 @@ dependencies {
   implementation("org.apache.commons:commons-lang3:3.18.0")
   implementation("commons-validator:commons-validator:1.10.0")
 
-  run {
-    // v10 requires JDK 21
-    val luceneVersion = "9.9.1"
-    implementation("org.apache.lucene:lucene-core:$luceneVersion")
-    implementation("org.apache.lucene:lucene-analysis-common:$luceneVersion")
-    implementation("org.apache.lucene:lucene-queryparser:$luceneVersion")
-    implementation("org.apache.lucene:lucene-backward-codecs:$luceneVersion")
-  }
+  implementation("org.apache.lucene:lucene-core:${libs.versions.lucene.get()}")
+  implementation("org.apache.lucene:lucene-analysis-common:${libs.versions.lucene.get()}")
+  implementation("org.apache.lucene:lucene-queryparser:${libs.versions.lucene.get()}")
+  implementation("org.apache.lucene:lucene-backward-codecs:${libs.versions.lucene.get()}")
 
   implementation("com.ibm.icu:icu4j:77.1")
 
@@ -95,18 +92,18 @@ dependencies {
   implementation("org.apache.tika:tika-core:2.9.1")
   implementation("org.apache.commons:commons-compress:1.27.1")
   implementation("com.github.junrar:junrar:7.5.5")
-  implementation("com.github.gotson.nightcompress:nightcompress:1.1.0")
+  implementation("com.github.gotson.nightcompress:nightcompress:1.1.1")
   implementation("org.apache.pdfbox:pdfbox:3.0.5")
   implementation("net.grey-panther:natural-comparator:1.1")
   implementation("org.jsoup:jsoup:1.18.3")
 
   implementation("net.coobird:thumbnailator:0.4.20")
-  runtimeOnly("com.twelvemonkeys.imageio:imageio-jpeg:3.12.0")
-  runtimeOnly("com.twelvemonkeys.imageio:imageio-tiff:3.12.0")
-  runtimeOnly("com.twelvemonkeys.imageio:imageio-webp:3.12.0")
-  runtimeOnly("com.github.gotson.nightmonkeys:imageio-jxl:1.0.0")
-  runtimeOnly("com.github.gotson.nightmonkeys:imageio-heif:1.0.0")
-  runtimeOnly("com.github.gotson.nightmonkeys:imageio-webp:1.0.0")
+  runtimeOnly("com.twelvemonkeys.imageio:imageio-jpeg:${libs.versions.twelvemonkeys.get()}")
+  runtimeOnly("com.twelvemonkeys.imageio:imageio-tiff:${libs.versions.twelvemonkeys.get()}")
+  runtimeOnly("com.twelvemonkeys.imageio:imageio-webp:${libs.versions.twelvemonkeys.get()}")
+  runtimeOnly("com.github.gotson.nightmonkeys:imageio-jxl:${libs.versions.nightmonkeys.get()}")
+  runtimeOnly("com.github.gotson.nightmonkeys:imageio-heif:${libs.versions.nightmonkeys.get()}")
+  runtimeOnly("com.github.gotson.nightmonkeys:imageio-webp:${libs.versions.nightmonkeys.get()}")
   // support for jpeg2000
   runtimeOnly("com.github.jai-imageio:jai-imageio-jpeg2000:1.4.0")
   runtimeOnly("org.apache.pdfbox:jbig2-imageio:3.0.4")
@@ -120,11 +117,11 @@ dependencies {
 
   implementation("com.github.ben-manes.caffeine:caffeine")
 
-  implementation("org.xerial:sqlite-jdbc:3.50.2.0")
-  jooqGenerator("org.xerial:sqlite-jdbc:3.50.2.0")
+  implementation("org.xerial:sqlite-jdbc:${libs.versions.sqliteJdbc.get()}")
+  jooqGenerator("org.xerial:sqlite-jdbc:${libs.versions.sqliteJdbc.get()}")
 
   if (version.toString().endsWith(".0.0")) {
-    ksp("com.github.gotson.bestbefore:bestbefore-processor-kotlin:0.1.0")
+    ksp("com.github.gotson.bestbefore:bestbefore-processor-kotlin:0.2.0")
   }
 
   testImplementation("org.springframework.boot:spring-boot-starter-test") {
@@ -140,9 +137,9 @@ dependencies {
   benchmarkImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
   benchmarkImplementation("org.openjdk.jmh:jmh-core:1.37")
   kaptBenchmark("org.openjdk.jmh:jmh-generator-annprocess:1.37")
-  kaptBenchmark("org.springframework.boot:spring-boot-configuration-processor:3.5.3")
+  kaptBenchmark("org.springframework.boot:spring-boot-configuration-processor:${libs.versions.springboot.get()}")
 
-  developmentOnly("org.springframework.boot:spring-boot-devtools:3.5.3")
+  developmentOnly("org.springframework.boot:spring-boot-devtools:${libs.versions.springboot.get()}")
 }
 
 kotlin {
@@ -319,13 +316,13 @@ tasks.register("flywayMigrateTasks", FlywayMigrateTask::class) {
 buildscript {
   configurations["classpath"].resolutionStrategy.eachDependency {
     if (requested.group.startsWith("org.jooq") && requested.name.startsWith("jooq")) {
-      useVersion("3.19.24")
+      useVersion(libs.versions.jooq.get())
     }
   }
 }
 
 jooq {
-  version = "3.19.24"
+  version = libs.versions.jooq.get()
   configurations {
     create("main") {
       jooqConfiguration.apply {

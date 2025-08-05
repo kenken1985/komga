@@ -7,10 +7,10 @@ import org.gotson.komga.domain.model.SearchContext
 import org.gotson.komga.infrastructure.datasource.SqliteUdfDataSource
 import org.gotson.komga.infrastructure.jooq.BookSearchHelper
 import org.gotson.komga.infrastructure.jooq.RequiredJoin
-import org.gotson.komga.infrastructure.jooq.insertTempStrings
+import org.gotson.komga.infrastructure.jooq.TempTable
+import org.gotson.komga.infrastructure.jooq.TempTable.Companion.withTempTable
 import org.gotson.komga.infrastructure.jooq.noCase
 import org.gotson.komga.infrastructure.jooq.rlbAlias
-import org.gotson.komga.infrastructure.jooq.selectTempStrings
 import org.gotson.komga.infrastructure.jooq.sortByValues
 import org.gotson.komga.infrastructure.jooq.toCondition
 import org.gotson.komga.infrastructure.jooq.toOrderBy
@@ -39,6 +39,7 @@ import org.jooq.SelectOnConditionStep
 import org.jooq.impl.DSL
 import org.jooq.impl.DSL.falseCondition
 import org.jooq.impl.DSL.noCondition
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
@@ -46,15 +47,13 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Component
-import org.springframework.transaction.support.TransactionTemplate
 import java.net.URL
 
 @Component
 class BookDtoDao(
-  private val dsl: DSLContext,
+  @Qualifier("dslContextRO") private val dslRO: DSLContext,
   private val luceneHelper: LuceneHelper,
   @param:Value("#{@komgaProperties.database.batchChunkSize}") private val batchSize: Int,
-  private val transactionTemplate: TransactionTemplate,
   private val bookCommonDao: BookCommonDao,
 ) : BookDtoRepository {
   private val b = Tables.BOOK
@@ -120,14 +119,6 @@ class BookDtoDao(
   ): Page<BookDto> {
     val bookIds = luceneHelper.searchEntitiesIds(searchTerm, LuceneEntity.Book)
 
-    val searchCondition =
-      when {
-        bookIds == null -> noCondition()
-        bookIds.isEmpty() -> falseCondition()
-        // use temp table in case there are many search results
-        else -> b.ID.`in`(dsl.selectTempStrings())
-      }
-
     val orderBy =
       pageable.sort.mapNotNull {
         if (it.property == "relevance" && !bookIds.isNullOrEmpty()) {
@@ -143,76 +134,85 @@ class BookDtoDao(
         }
       }
 
-    val (count, dtos) =
-      transactionTemplate.execute {
-        // only insert if we know we are going to select on that condition
-        if (!bookIds.isNullOrEmpty()) dsl.insertTempStrings(batchSize, bookIds)
+    // don't use the DSLContext.withTempTable form to control optional creation
+    TempTable(dslRO).use { tempTable ->
 
-        val count =
-          dsl.fetchCount(
-            dsl
-              .select(b.ID)
-              .from(b)
-              .leftJoin(m)
-              .on(b.ID.eq(m.BOOK_ID))
-              .leftJoin(d)
-              .on(b.ID.eq(d.BOOK_ID))
-              .leftJoin(r)
-              .on(b.ID.eq(r.BOOK_ID))
-              .and(readProgressCondition(userId))
-              .leftJoin(sd)
-              .on(b.SERIES_ID.eq(sd.SERIES_ID))
-              .apply {
-                joins.forEach { join ->
-                  when (join) {
-                    is RequiredJoin.ReadList -> {
-                      val rlbAlias = rlbAlias(join.readListId)
-                      leftJoin(rlbAlias).on(rlbAlias.BOOK_ID.eq(b.ID).and(rlbAlias.READLIST_ID.eq(join.readListId)))
-                    }
-                    // always joined
-                    RequiredJoin.BookMetadata -> Unit
-                    RequiredJoin.Media -> Unit
-                    is RequiredJoin.ReadProgress -> Unit
-                    // Series joins - not needed
-                    RequiredJoin.BookMetadataAggregation -> Unit
-                    RequiredJoin.SeriesMetadata -> Unit
-                    is RequiredJoin.Collection -> Unit
+      val searchCondition =
+        when {
+          bookIds == null -> noCondition()
+          bookIds.isEmpty() -> falseCondition()
+          // use temp table in case there are many search results
+          else -> {
+            tempTable.insertTempStrings(batchSize, bookIds)
+            b.ID.`in`(tempTable.selectTempStrings())
+          }
+        }
+
+      val count =
+        dslRO.fetchCount(
+          dslRO
+            .select(b.ID)
+            .from(b)
+            .leftJoin(m)
+            .on(b.ID.eq(m.BOOK_ID))
+            .leftJoin(d)
+            .on(b.ID.eq(d.BOOK_ID))
+            .leftJoin(r)
+            .on(b.ID.eq(r.BOOK_ID))
+            .and(readProgressCondition(userId))
+            .leftJoin(sd)
+            .on(b.SERIES_ID.eq(sd.SERIES_ID))
+            .apply {
+              joins.forEach { join ->
+                when (join) {
+                  is RequiredJoin.ReadList -> {
+                    val rlbAlias = rlbAlias(join.readListId)
+                    leftJoin(rlbAlias).on(rlbAlias.BOOK_ID.eq(b.ID).and(rlbAlias.READLIST_ID.eq(join.readListId)))
                   }
+                  // always joined
+                  RequiredJoin.BookMetadata -> Unit
+                  RequiredJoin.Media -> Unit
+                  is RequiredJoin.ReadProgress -> Unit
+                  // Series joins - not needed
+                  RequiredJoin.BookMetadataAggregation -> Unit
+                  RequiredJoin.SeriesMetadata -> Unit
+                  is RequiredJoin.Collection -> Unit
                 }
-              }.where(conditions)
-              .and(searchCondition)
-              .groupBy(b.ID),
-          )
-
-        val dtos =
-          selectBase(userId, joins)
-            .where(conditions)
+              }
+            }.where(conditions)
             .and(searchCondition)
-            .orderBy(orderBy)
-            .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-            .fetchAndMap()
+            .groupBy(b.ID),
+        )
 
-        count to dtos
-      }!!
+      val dtos =
+        dslRO
+          .selectBase(userId, joins)
+          .where(conditions)
+          .and(searchCondition)
+          .orderBy(orderBy)
+          .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
+          .fetchAndMap(dslRO)
 
-    val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
-    return PageImpl(
-      dtos,
-      if (pageable.isPaged)
-        PageRequest.of(pageable.pageNumber, pageable.pageSize, pageSort)
-      else
-        PageRequest.of(0, maxOf(count, 20), pageSort),
-      count.toLong(),
-    )
+      val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
+      return PageImpl(
+        dtos,
+        if (pageable.isPaged)
+          PageRequest.of(pageable.pageNumber, pageable.pageSize, pageSort)
+        else
+          PageRequest.of(0, maxOf(count, 20), pageSort),
+        count.toLong(),
+      )
+    }
   }
 
   override fun findByIdOrNull(
     bookId: String,
     userId: String,
   ): BookDto? =
-    selectBase(userId)
+    dslRO
+      .selectBase(userId)
       .where(b.ID.eq(bookId))
-      .fetchAndMap()
+      .fetchAndMap(dslRO)
       .firstOrNull()
 
   override fun findPreviousInSeriesOrNull(
@@ -249,12 +249,12 @@ class BookDtoDao(
   ): Page<BookDto> {
     val (query, sortField, _) = bookCommonDao.getBooksOnDeckQuery(userId, restrictions, filterOnLibraryIds, onDeckFields)
 
-    val count = dsl.fetchCount(query)
+    val count = dslRO.fetchCount(query)
     val dtos =
       query
         .orderBy(sortField.desc())
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap()
+        .fetchAndMap(dslRO)
 
     return PageImpl(
       dtos,
@@ -271,7 +271,7 @@ class BookDtoDao(
     pageable: Pageable,
   ): Page<BookDto> {
     val hashes =
-      dsl
+      dslRO
         .select(b.FILE_HASH, DSL.count(b.ID))
         .from(b)
         .where(b.FILE_HASH.ne(""))
@@ -284,11 +284,12 @@ class BookDtoDao(
 
     val orderBy = pageable.sort.toOrderBy(sorts)
     val dtos =
-      selectBase(userId)
+      dslRO
+        .selectBase(userId)
         .where(b.FILE_HASH.`in`(hashes.keys))
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap()
+        .fetchAndMap(dslRO)
 
     val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
     return PageImpl(
@@ -309,7 +310,7 @@ class BookDtoDao(
     next: Boolean,
   ): BookDto? {
     val record =
-      dsl
+      dslRO
         .select(b.SERIES_ID, d.NUMBER_SORT)
         .from(b)
         .leftJoin(d)
@@ -319,12 +320,13 @@ class BookDtoDao(
     val seriesId = record.get(0, String::class.java)
     val numberSort = record.get(1, Float::class.java)
 
-    return selectBase(userId)
+    return dslRO
+      .selectBase(userId)
       .where(b.SERIES_ID.eq(seriesId))
       .orderBy(d.NUMBER_SORT.let { if (next) it.asc() else it.desc() })
       .seek(numberSort)
       .limit(1)
-      .fetchAndMap()
+      .fetchAndMap(dslRO)
       .firstOrNull()
   }
 
@@ -338,7 +340,7 @@ class BookDtoDao(
   ): BookDto? {
     if (readList.ordered) {
       val numberSort =
-        dsl
+        dslRO
           .select(rlb.NUMBER)
           .from(b)
           .leftJoin(rlb)
@@ -348,19 +350,20 @@ class BookDtoDao(
           .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
           .fetchOne(rlb.NUMBER)
 
-      return selectBase(userId, setOf(RequiredJoin.ReadList(readList.id)))
+      return dslRO
+        .selectBase(userId, setOf(RequiredJoin.ReadList(readList.id)))
         .apply { if (restrictions.isRestricted) and(restrictions.toCondition()) }
         .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
         .orderBy(rlbAlias(readList.id).NUMBER.let { if (next) it.asc() else it.desc() })
         .seek(numberSort)
         .limit(1)
-        .fetchAndMap()
+        .fetchAndMap(dslRO)
         .firstOrNull()
     } else {
       // it is too complex to perform a seek by release date as it could be null and could also have multiple occurrences of the same value
       // instead we pull the whole list of ids, and perform the seek on the list
       val bookIds =
-        dsl
+        dslRO
           .select(b.ID)
           .from(b)
           .leftJoin(rlb)
@@ -378,16 +381,17 @@ class BookDtoDao(
       if (bookIndex == -1) return null
       val siblingId = bookIds.getOrNull(bookIndex + if (next) 1 else -1) ?: return null
 
-      return selectBase(userId)
+      return dslRO
+        .selectBase(userId)
         .where(b.ID.eq(siblingId))
         .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
         .limit(1)
-        .fetchAndMap()
+        .fetchAndMap(dslRO)
         .firstOrNull()
     }
   }
 
-  private fun selectBase(
+  private fun DSLContext.selectBase(
     userId: String,
     joins: Set<RequiredJoin> = emptySet(),
   ): SelectOnConditionStep<Record> {
@@ -400,7 +404,7 @@ class BookDtoDao(
         sd.TITLE,
       )
 
-    return dsl
+    return this
       .select(selectFields)
       .from(b)
       .leftJoin(m)
@@ -432,32 +436,31 @@ class BookDtoDao(
       }
   }
 
-  private fun ResultQuery<Record>.fetchAndMap(): MutableList<BookDto> {
+  private fun ResultQuery<Record>.fetchAndMap(dsl: DSLContext): MutableList<BookDto> {
     val records = fetch()
     val bookIds = records.getValues(b.ID)
 
     lateinit var authors: Map<String, List<AuthorDto>>
     lateinit var tags: Map<String, List<String>>
     lateinit var links: Map<String, List<WebLinkDto>>
-    transactionTemplate.executeWithoutResult {
-      dsl.insertTempStrings(batchSize, bookIds)
+    dsl.withTempTable(batchSize, bookIds).use { tempTable ->
       authors =
         dsl
           .selectFrom(a)
-          .where(a.BOOK_ID.`in`(dsl.selectTempStrings()))
+          .where(a.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .filter { it.name != null }
           .groupBy({ it.bookId }, { AuthorDto(it.name, it.role) })
 
       tags =
         dsl
           .selectFrom(bt)
-          .where(bt.BOOK_ID.`in`(dsl.selectTempStrings()))
+          .where(bt.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.bookId }, { it.tag })
 
       links =
         dsl
           .selectFrom(bl)
-          .where(bl.BOOK_ID.`in`(dsl.selectTempStrings()))
+          .where(bl.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.bookId }, { WebLinkDto(it.label, it.url) })
     }
 

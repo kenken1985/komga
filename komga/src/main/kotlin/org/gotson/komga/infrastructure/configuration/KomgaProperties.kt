@@ -21,6 +21,7 @@ class KomgaProperties {
   private fun makeDirs() {
     try {
       Path(database.file).parent.createDirectories()
+      Path(tasksDb.file).parent.createDirectories()
     } catch (_: Exception) {
     }
   }
@@ -72,6 +73,8 @@ class KomgaProperties {
     var busyTimeout: Duration? = null
 
     var pragmas: Map<String, String> = emptyMap()
+
+    var checkLocalFilesystem: Boolean = true
   }
 
   class Fonts {
