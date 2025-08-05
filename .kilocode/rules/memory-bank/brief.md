@@ -59,7 +59,9 @@ The push-to-kindle feature uses a Python-based implementation with the following
 
 ### **🔄 NEXT PHASE**
 - **Multi-Select Push**: Implementation needed for MultiSelectBar.vue to handle bulk book transfers
-- **Push To Kindle Progress Page**: Add a page that display the log output from push_to_kindle.py 
+- **Push To Kindle Progress Page**: Add a page that display the log output from push_to_kindle.py. Put the page link to the sidebar as a subcatrgory of History, rename original History as Scan History and put it as subcatrgory too
+- **Improve KCC edge removal** Extend the current page number removal to remove watermark and title on the edge. Example is provided in test_crop.
+
 
 ## **STATUS**: **PRODUCTION READY v2.0** ✅
 Core functionality is complete and in production. Multi-select feature is planned for future enhancement.
