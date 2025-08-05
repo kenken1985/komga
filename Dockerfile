@@ -23,14 +23,14 @@ COPY gradlew ./
 COPY gradle.properties ./
 COPY build.gradle.kts ./
 COPY settings.gradle ./
-# Download dependencies
-RUN ./gradlew dependencies --no-daemon
+# Use the Gradle installed in the container directly to skip wrapper download
+RUN gradle dependencies --no-daemon
 # Copy source code after dependencies
 # Copy only the files needed for backend build, excluding komga_custom
 COPY komga/ ./komga/
 # Copy built frontend from previous stage
 COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/public
-RUN ./gradlew clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
+RUN gradle clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
 
 # Stage 3: Extract layers
 FROM eclipse-temurin:21-jre AS builder
