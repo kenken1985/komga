@@ -59,7 +59,7 @@ The push-to-kindle feature uses a Python-based implementation with the following
 
 ### **🔄 NEXT PHASE**
 - **Multi-Select Push**: Implementation needed for MultiSelectBar.vue to handle bulk book transfers
-- **Push To Kindle Prgress Page**: Add a page that show the progress of tehe files currently pushing to Kindle. 
+- **Push To Kindle Progress Page**: Add a page that display the log output from push_to_kindle.py 
 
 ## **STATUS**: **PRODUCTION READY v2.0** ✅
 Core functionality is complete and in production. Multi-select feature is planned for future enhancement.

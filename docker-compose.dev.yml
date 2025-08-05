@@ -1,28 +1,32 @@
-version: '3.8'
-
 services:
-  komga-dev:
-    image: komga-kindle:dev  # Use the built image instead of building from backend-build stage
+  komga-kindle-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+#    image: komga-kindle:latest
+    image: komga-kindle:dev
     ports:
-      - "25600:25600"
+      - "25601:25600"
+      # Progress app runs internally on port 5001, no host mapping to avoid conflicts
     volumes:
-      # Mount test library and custom scripts
-      - ./test_library:/app/komga_custom/test_library
-      - ./komga_custom:/app/komga_custom
+      # Config Folder
+       - type: bind
+         source: /mnt/dockerHDD/opt/komga
+         target: /config
+      # Library Folder      
+       - type: bind
+         source: /mnt/mainHDD
+         target: /data
+
     env_file:
       - .env
     environment:
-      - KOMGA_LIBRARIES_PATHS=/app/komga_custom/test_library
-      - SPRING_PROFILES_ACTIVE=dev,noclaim
-      - KINDLE_SSH_PASSWORD=
-      - KINDLE_SSH_PORT=2222
-
-  # Alternative: Use the full build for testing
-  komga-test:
-    build: .
-    ports:
-      - "25602:25600"
-    volumes:
-      - ./komga_custom:/app/komga_custom
-    environment:
-      - SPRING_PROFILES_ACTIVE=dev 
+#      - KOMGA_LIBRARIES_PATHS=/data
+      - SPRING_PROFILES_ACTIVE=prod
+      # Kindle configuration - adjust as needed
+      - KINDLE_IP=${KINDLE_IP}
+      - KINDLE_USER=${KINDLE_USER}
+      - KINDLE_REMOTE_PATH=${KINDLE_REMOTE_PATH}
+      - KINDLE_SSH_PASSWORD=${KINDLE_SSH_PASSWORD}
+      - KINDLE_SSH_PORT=${KINDLE_SSH_PORT}
+    restart: unless-stopped

@@ -1,31 +1,11 @@
 # Kilo Code Usage Rules
 
-### 2. Test files
-**Rule**: Keep the test file generated, don't delete them.
+### 2. File Removal
+**Rule**: Do Not Delete any file. If some file is supposed to be removed, add a "REMOVE_<UUID>_" tag to the front and leave it as is. I will determine if it needed to be removed.
 
 ## Development Environment Rules
 ### 2. Virtual Environment Management
 **Rule**: Don't use virtual environment
-
-**Workflow**:
-1. Check for existing virtual environments:
-   ```bash
-   # Check for common venv directories
-   ls -la | grep -E "(venv|env|\.venv|\.env)"
-   # Check if venv is activated
-   echo $VIRTUAL_ENV
-   ```
-2. If no venv exists, create one:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Unix/macOS
-   # or
-   venv\Scripts\activate     # On Windows
-   ```
-3. Install requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
 
 ### 3. Code Modification Philosophy
 **Rule**: When adding new functionality to existing project, try to use existing codebase and make as little change as possible and make as least new function as possible. When introducing changes, make sure to include default setting the mimic the action before change to prevent breaking code and preserve compatibility.

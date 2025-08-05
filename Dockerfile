@@ -2,7 +2,7 @@
 FROM node:18 AS frontend-build
 WORKDIR /app/komga-webui
 
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+ENV NODE_OPTIONS="--max-old-space-size=16384"
 
 # Copy package files first for better caching
 COPY komga-webui/package*.json ./
@@ -12,17 +12,22 @@ COPY komga-webui/ .
 RUN npm run build
 
 # Stage 2: Build the backend
-FROM gradle:8.5.0-jdk21 AS backend-build
+FROM gradle:8.14.3-jdk21 AS backend-build
 WORKDIR /app
+# Set up Gradle cache directory
+ENV GRADLE_USER_HOME=/home/gradle/.gradle
 # Copy gradle files first for better caching
 COPY gradle/ ./gradle/
+COPY gradle/wrapper/gradle-wrapper.jar ./gradle/wrapper/
 COPY gradlew ./
+COPY gradle.properties ./
 COPY build.gradle.kts ./
 COPY settings.gradle ./
 # Download dependencies
 RUN ./gradlew dependencies --no-daemon
 # Copy source code after dependencies
-COPY . .
+# Copy only the files needed for backend build, excluding komga_custom
+COPY komga/ ./komga/
 # Copy built frontend from previous stage
 COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/public
 RUN ./gradlew clean build -x test -PskipGitProperties=true
@@ -102,11 +107,12 @@ VOLUME /tmp
 VOLUME /config
 WORKDIR /app
 
-# Copy extracted layers from builder
+# Copy extracted layers and application jar from builder
 COPY --from=builder /builder/extracted/dependencies/ ./
 COPY --from=builder /builder/extracted/spring-boot-loader/ ./
 COPY --from=builder /builder/extracted/snapshot-dependencies/ ./
 COPY --from=builder /builder/extracted/application/ ./
+COPY --from=builder /builder/application.jar ./
 
 # Install Python dependencies
 COPY requirements.txt ./
