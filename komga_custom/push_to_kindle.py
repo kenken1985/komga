@@ -255,6 +255,7 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             "-q",
             "-u",
             "-m",
+            "--cp", "2",
             "--mozjpeg",
             "-f", "CBZ",
             "-o", output_file_path,
@@ -314,7 +315,8 @@ def clean_cbz(file_path: str) -> str:
     """
     try:
         file_path = Path(file_path)
-        cleaned_cbz_path = file_path.parent / f"{file_path.stem}_cleaned.cbz"
+        tmp_dir = Path('/tmp')
+        cleaned_cbz_path = tmp_dir / f"{file_path.stem}_cleaned.cbz"
         with zipfile.ZipFile(file_path, 'r') as z_in:
             with zipfile.ZipFile(cleaned_cbz_path, 'w') as z_out:
                 for item in z_in.infolist():
