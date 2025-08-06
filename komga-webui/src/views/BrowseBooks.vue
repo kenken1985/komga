@@ -37,6 +37,7 @@
       @bulk-edit="bulkEditMultipleBooks"
       @edit="editMultipleBooks"
       @delete="deleteBooks"
+      @push-to-kindle="pushSelectedToKindle"
     />
 
     <library-navigation v-if="$vuetify.breakpoint.smAndDown" :libraryId="libraryId" bottom-navigation/>
@@ -670,6 +671,24 @@ export default Vue.extend({
     },
     deleteBooks() {
       this.$store.dispatch('dialogDeleteBook', this.selectedBooks)
+    },
+    pushSelectedToKindle () {
+      this.selectedBooks.forEach(book => {
+        this.$komgaBooks.pushToKindle(book.id)
+          .then(() => {
+            this.$store.dispatch('snackbar/show', {
+              message: `Book '${book.metadata.title}' has been sent to Kindle`,
+              color: 'success',
+            })
+          })
+          .catch(e => {
+            this.$store.dispatch('snackbar/show', {
+              message: e.message,
+              color: 'error',
+            })
+          })
+      })
+      this.selectedBooks = []
     },
   },
 })

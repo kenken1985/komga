@@ -50,6 +50,7 @@
       @bulk-edit="bulkEditMultipleBooks"
       @edit="editMultipleBooks"
       @delete="deleteBooks"
+      @push-to-kindle="pushSelectedToKindle"
     />
 
     <filter-drawer
@@ -1130,6 +1131,24 @@ export default Vue.extend({
             color: 'error',
           })
         })
+    },
+    pushSelectedToKindle() {
+      this.selectedBooks.forEach(book => {
+        this.$komgaBooks.pushToKindle(book.id)
+          .then(() => {
+            this.$store.dispatch('snackbar/show', {
+              message: `Book '${book.metadata.title}' has been sent to Kindle`,
+              color: 'success',
+            })
+          })
+          .catch(e => {
+            this.$store.dispatch('snackbar/show', {
+              message: e.message,
+              color: 'error',
+            })
+          })
+      })
+      this.selectedBooks = []
     },
     bulkEditMultipleBooks() {
       this.$store.dispatch('dialogUpdateBulkBooks', this.$_.sortBy(this.selectedBooks, ['metadata.numberSort']))
