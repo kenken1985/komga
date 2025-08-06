@@ -224,11 +224,16 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
     Returns:
         bool: True if processing succeeded, False otherwise
     """
-    kcc_script = "/app/komga_custom/kcc-c2e.py"
+    kcc_script_dir = os.path.dirname(os.path.abspath(__file__))
+    kcc_script = os.path.join(kcc_script_dir, "kcc-c2e.py")
     
     if not os.path.exists(kcc_script):
         print(f"Error: KCC script not found at {kcc_script}")
-        return False
+        # Fallback for Docker environment
+        kcc_script = "/app/komga_custom/kcc-c2e.py"
+        if not os.path.exists(kcc_script):
+            print(f"Error: KCC script not found at {kcc_script} either.")
+            return False
     
     # Get base filename without extension
     base_filename = os.path.splitext(os.path.basename(book_path))[0]
@@ -239,19 +244,25 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
     print(f"Output file: {output_file_path}")
     
     try:
+        # Add PYTHONPATH to include the directory containing kindlecomicconverter module
+        env = os.environ.copy()
+        env['PYTHONPATH'] = os.path.dirname(kcc_script)
         command = [
             "python3",
-            kcc_script,
+            "-c",
+            f"import sys; sys.path.insert(0, '{os.path.dirname(kcc_script)}'); exec(open('{kcc_script}').read())",
             "-p", "KPW5",
             "-q",
             "-u",
+            "-m",
             "--mozjpeg",
             "-f", "CBZ",
             "-o", output_file_path,
             book_path
         ]
-        print(f"Executing KCC command: {' '.join(command)}")
-        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+        print(f"Executing KCC command with PYTHONPATH={env['PYTHONPATH']}")
+        print(f"Command: {' '.join(command)}")
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
         if result.returncode == 0:
             print("KCC processing completed successfully")
             if result.stdout.strip():
@@ -344,21 +355,26 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     for file_path in file_paths:
-        print(f"Processing {file_path} with Kindle Comic Converter...")
+        print(f"--- Processing file: {file_path} ---")
         kcc_output_dir = temp_dir
+        
         if process_with_kcc(file_path, kcc_output_dir):
+            # KCC processing was successful.
+            # The output file name is based on the original book path.
             base_filename = os.path.splitext(os.path.basename(file_path))[0]
             kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
+            
             if os.path.exists(kcc_output_file):
-                final_file = kcc_output_file
-                print(f"Using KCC processed file: {final_file}")
+                print(f"KCC processing successful. Pushing file to Kindle.")
+                push_to_kindle(kcc_output_file, target_folder)
             else:
-                print("KCC output file not found, attempting to use cleaned file")
-                final_file = clean_cbz(file_path) or file_path
+                # This case should not happen if process_with_kcc returns True, but we handle it just in case.
+                print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
         else:
-            print("KCC processing failed, attempting to use cleaned file")
-            final_file = clean_cbz(file_path) or file_path
-        push_to_kindle(final_file, target_folder)
+            # KCC processing failed, even after a potential retry with a cleaned file.
+            print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+        
+        print(f"--- Finished processing file: {file_path} ---")
 
 
 if __name__ == "__main__":
