@@ -7,6 +7,7 @@ import io
 import urllib.parse
 from PIL import Image
 from typing import List
+from pathlib import Path
 
 # NOTE: You need to install the following python packages:
 # pip install Pillow
@@ -249,11 +250,8 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             "-o", output_file_path,
             book_path
         ]
-        
         print(f"Executing KCC command: {' '.join(command)}")
-        
         result = subprocess.run(command, capture_output=True, text=True, timeout=600)
-        
         if result.returncode == 0:
             print("KCC processing completed successfully")
             if result.stdout.strip():
@@ -266,14 +264,58 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
                 print(f"KCC stderr: {result.stderr}")
             if result.stdout:
                 print(f"KCC stdout: {result.stdout}")
+            # Check for extraction error in KCC output
+            if "Failed to extract archive" in result.stdout or "Failed to extract archive" in result.stderr:
+                print("Detected extraction error. Attempting to clean the CBZ and retry...")
+                cleaned_cbz_path = clean_cbz(book_path)
+                if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
+                    print(f"Retrying KCC with cleaned CBZ: {cleaned_cbz_path}")
+                    # Retry KCC with the cleaned CBZ
+                    command[-1] = cleaned_cbz_path  # Update the book path in the command
+                    result2 = subprocess.run(command, capture_output=True, text=True, timeout=600)
+                    if result2.returncode == 0:
+                        print("KCC processing completed successfully after cleaning")
+                        if result2.stdout.strip():
+                            print(f"KCC stdout: {result2.stdout}")
+                        return True
+                    else:
+                        print("KCC still failed after cleaning.")
+                        if result2.stderr:
+                            print(f"KCC stderr: {result2.stderr}")
+                        if result2.stdout:
+                            print(f"KCC stdout: {result2.stdout}")
+                        return False
+                else:
+                    print("CBZ cleaning failed.")
+                    return False
             return False
-            
     except subprocess.TimeoutExpired:
         print("KCC processing timed out after 600 seconds")
         return False
     except Exception as e:
         print(f"Exception during KCC processing: {e}")
         return False
+
+def clean_cbz(file_path: str) -> str:
+    """
+    Cleans a CBZ file by removing directories and __MACOSX files, and flattening the structure.
+    Returns the path to the cleaned file, or None if cleaning fails.
+    """
+    try:
+        file_path = Path(file_path)
+        cleaned_cbz_path = file_path.parent / f"{file_path.stem}_cleaned.cbz"
+        with zipfile.ZipFile(file_path, 'r') as z_in:
+            with zipfile.ZipFile(cleaned_cbz_path, 'w') as z_out:
+                for item in z_in.infolist():
+                    if item.is_dir() or item.filename.startswith('__MACOSX/'):
+                        continue
+                    # Write file to the root of the archive
+                    z_out.writestr(Path(item.filename).name, z_in.read(item.filename))
+        print(f"Cleaned CBZ created at: {cleaned_cbz_path}")
+        return str(cleaned_cbz_path)
+    except Exception as e:
+        print(f"Failed to clean CBZ: {e}")
+        return None
 
 def main():
     """
@@ -302,27 +344,22 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     for file_path in file_paths:
-        # Step 1: Process with KCC (handles all image formats including AVIF/WEBP and CBR files)
         print(f"Processing {file_path} with Kindle Comic Converter...")
         kcc_output_dir = temp_dir
         if process_with_kcc(file_path, kcc_output_dir):
-            # Find the KCC output file with the new naming pattern
             base_filename = os.path.splitext(os.path.basename(file_path))[0]
             kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
-            
-            # Use the KCC processed file directly since we specified the exact output filename
             if os.path.exists(kcc_output_file):
                 final_file = kcc_output_file
                 print(f"Using KCC processed file: {final_file}")
             else:
-                print("KCC output file not found, using original file")
-                final_file = file_path
+                print("KCC output file not found, attempting to use cleaned file")
+                final_file = clean_cbz(file_path) or file_path
         else:
-            print("KCC processing failed, using original file")
-            final_file = file_path
-
-        # Step 3: Push the final file to Kindle with folder organization
+            print("KCC processing failed, attempting to use cleaned file")
+            final_file = clean_cbz(file_path) or file_path
         push_to_kindle(final_file, target_folder)
+
 
 if __name__ == "__main__":
     main()
