@@ -775,6 +775,9 @@ class BookController(
     @PathVariable bookId: String,
     @AuthenticationPrincipal principal: KomgaPrincipal,
   ) {
+    // Immediate feedback when the button is pressed
+    logger.info { "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting..." }
+
     bookRepository.findByIdOrNull(bookId)?.let { book ->
       contentRestrictionChecker.checkContentRestriction(principal.user, book)
 
@@ -788,8 +791,9 @@ class BookController(
         processBuilder.redirectErrorStream(true)
         val process = processBuilder.start()
         val reader = process.inputStream.bufferedReader()
+        val preface = "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting...\n"
         val output = reader.readText()
-        logger.info { "Push to kindle script output: $output" }
+        logger.info { "Push to kindle script output: $preface$output" }
         process.waitFor()
       } catch (e: Exception) {
         logger.error(e) { "Error while executing push to kindle script for book: $bookId" }

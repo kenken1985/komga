@@ -883,6 +883,9 @@ class SeriesController(
     @PathVariable seriesId: String,
     @AuthenticationPrincipal principal: KomgaPrincipal,
   ) {
+    // Immediate feedback when the button is pressed
+    logger.info { "[push_to_kindle] Upload requested from WebUI for series: $seriesId. Starting..." }
+
     principal.user.checkContentRestriction(seriesId)
 
     val books = bookRepository.findAllBySeriesId(seriesId)
