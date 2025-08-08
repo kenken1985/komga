@@ -97,6 +97,12 @@ def push_to_kindle(file_path: str, target_folder: str = None):
     """
     Pushes a file to Kindle using scp with configurable authentication and folder organization.
     """
+    print("[push_to_kindle] Received command to push file to Kindle.", flush=True)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
     print(f"--- Debug: Pushing to Kindle ---")
     print(f"File path: {file_path}")
     print(f"Target folder: {target_folder}")
@@ -108,7 +114,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         if target_folder and target_folder.strip():
             remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}"
         else:
-            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New Volume"
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New_Volume"
         
         # Build the scp command based on authentication method
         if KINDLE_SSH_PASSWORD:
@@ -139,7 +145,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            folder_display = target_folder if target_folder else "New Volume"
+            folder_display = target_folder if target_folder else "New_Volume"
             print(f"Successfully uploaded {filename} to Kindle folder: {folder_display}")
             if result.stdout.strip():
                 print(f"Stdout: {result.stdout}")
@@ -157,6 +163,13 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         print(f"An error occurred: {e}")
     finally:
         print(f"--- End Debug ---")
+        # Remove the temporary file after upload if it exists and is in /tmp
+        try:
+            if file_path.startswith("/tmp/") and os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"Removed temporary file: {file_path}")
+        except Exception as cleanup_err:
+            print(f"Warning: Failed to remove temporary file {file_path}: {cleanup_err}")
 
 
 def create_remote_folder(folder_name: str):
@@ -338,7 +351,7 @@ def main():
     print(f"Processing files: {file_paths}")
 
     # Determine target folder based on number of files
-    target_folder = "New Volume"
+    target_folder = "New_Volume"
     if len(file_paths) > 1:
         # For multiple files, try to extract series name from first file
         series_name = extract_series_name_from_path(file_paths[0])
@@ -346,9 +359,9 @@ def main():
             target_folder = series_name
             print(f"Multiple files detected, using series folder: {target_folder}")
         else:
-            print("Multiple files detected but couldn't determine series, using 'New Volume' folder")
+            print("Multiple files detected but couldn't determine series, using 'New_Volume' folder")
     else:
-        print("Single file detected, using 'New Volume' folder")
+        print("Single file detected, using 'New_Volume' folder")
 
     # Create the target folder on Kindle
     create_remote_folder(target_folder)
