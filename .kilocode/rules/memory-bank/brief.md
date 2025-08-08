@@ -57,10 +57,11 @@ The push-to-kindle feature uses a Python-based implementation with the following
 4. **Format Support**: Native handling of all image formats including AVIF/WEBP
 5. **Smart Folder Organization**: Series-based folder creation for multiple files
 - **Multi-Select Push**: Implementation needed for MultiSelectBar.vue to handle bulk book transfers
+- **Improve KCC edge removal** Extend the current page number removal to remove watermark and title on the edge. Example is provided in test_crop.
 
 ### **🔄 NEXT PHASE**
 - **Push To Kindle Progress Page**: Add a page that display the log output from push_to_kindle.py. Put the page link to the sidebar as a subcatrgory of History, rename original History as Scan History and put it as subcatrgory too
-- **Improve KCC edge removal** Extend the current page number removal to remove watermark and title on the edge. Example is provided in test_crop.
+
 
 
 ## **STATUS**: **PRODUCTION READY v2.0** ✅
