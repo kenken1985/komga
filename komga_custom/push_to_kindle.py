@@ -372,23 +372,26 @@ def main():
     for file_path in file_paths:
         print(f"--- Processing file: {file_path} ---")
         kcc_output_dir = temp_dir
-        
+
         if process_with_kcc(file_path, kcc_output_dir):
             # KCC processing was successful.
-            # The output file name is based on the original book path.
             base_filename = os.path.splitext(os.path.basename(file_path))[0]
             kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
-            
+
             if os.path.exists(kcc_output_file):
                 print(f"KCC processing successful. Pushing file to Kindle.")
                 push_to_kindle(kcc_output_file, target_folder)
+                # Clean up the KCC output file after pushing
+                try:
+                    os.remove(kcc_output_file)
+                    print(f"Removed cleaned CBZ: {kcc_output_file}")
+                except Exception as cleanup_err:
+                    print(f"Warning: Failed to remove cleaned CBZ {kcc_output_file}: {cleanup_err}")
             else:
-                # This case should not happen if process_with_kcc returns True, but we handle it just in case.
                 print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
         else:
-            # KCC processing failed, even after a potential retry with a cleaned file.
             print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
-        
+
         print(f"--- Finished processing file: {file_path} ---")
 
 
