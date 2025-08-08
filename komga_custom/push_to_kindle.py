@@ -256,6 +256,7 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
     print(f"Processing with KCC: {book_path}")
     print(f"Output file: {output_file_path}")
     
+    cleaned_cbz_path = None
     try:
         # Add PYTHONPATH to include the directory containing kindlecomicconverter module
         env = os.environ.copy()
@@ -281,7 +282,7 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             print("KCC processing completed successfully")
             if result.stdout.strip():
                 print(f"KCC stdout: {result.stdout}")
-            return True
+            return True, cleaned_cbz_path
         else:
             print("Error during KCC processing")
             print(f"Return code: {result.returncode}")
@@ -302,24 +303,24 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
                         print("KCC processing completed successfully after cleaning")
                         if result2.stdout.strip():
                             print(f"KCC stdout: {result2.stdout}")
-                        return True
+                        return True, cleaned_cbz_path
                     else:
                         print("KCC still failed after cleaning.")
                         if result2.stderr:
                             print(f"KCC stderr: {result2.stderr}")
                         if result2.stdout:
                             print(f"KCC stdout: {result2.stdout}")
-                        return False
+                        return False, cleaned_cbz_path
                 else:
                     print("CBZ cleaning failed.")
-                    return False
-            return False
+                    return False, cleaned_cbz_path
+            return False, cleaned_cbz_path
     except subprocess.TimeoutExpired:
         print("KCC processing timed out after 600 seconds")
-        return False
+        return False, cleaned_cbz_path
     except Exception as e:
         print(f"Exception during KCC processing: {e}")
-        return False
+        return False, cleaned_cbz_path
 
 def clean_cbz(file_path: str) -> str:
     """
@@ -373,24 +374,26 @@ def main():
         print(f"--- Processing file: {file_path} ---")
         kcc_output_dir = temp_dir
 
-        if process_with_kcc(file_path, kcc_output_dir):
-            # KCC processing was successful.
-            base_filename = os.path.splitext(os.path.basename(file_path))[0]
-            kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
+        kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
+        base_filename = os.path.splitext(os.path.basename(file_path))[0]
+        kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
 
+        if kcc_success:
             if os.path.exists(kcc_output_file):
                 print(f"KCC processing successful. Pushing file to Kindle.")
                 push_to_kindle(kcc_output_file, target_folder)
-                # Clean up the KCC output file after pushing
-                try:
-                    os.remove(kcc_output_file)
-                    print(f"Removed cleaned CBZ: {kcc_output_file}")
-                except Exception as cleanup_err:
-                    print(f"Warning: Failed to remove cleaned CBZ {kcc_output_file}: {cleanup_err}")
             else:
                 print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
         else:
             print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+
+        # Remove cleaned CBZ if it was created
+        if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
+            try:
+                os.remove(cleaned_cbz_path)
+                print(f"Removed cleaned CBZ: {cleaned_cbz_path}")
+            except Exception as cleanup_err:
+                print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
 
         print(f"--- Finished processing file: {file_path} ---")
 
