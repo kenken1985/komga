@@ -5,6 +5,9 @@
 ### Kotlin
 .kotlin
 
+*.jpg
+*.cbz
+
 ### NodeJS
 node_modules
 
