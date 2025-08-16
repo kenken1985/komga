@@ -44,7 +44,8 @@ def is_mono_color_background(image, x, y, w, h, threshold=50):
     # Be lenient - if any criteria match, consider it mono-color
     is_mono = is_light_bg or is_dark_bg or is_uniform
     
-    print(f"  Background check - Gray std: {gray_std:.1f}, mean: {gray_mean:.1f} -> {'Mono' if is_mono else 'Complex'}")
+    # Background check debug info removed for production
+    # print(f"  Background check - Gray std: {gray_std:.1f}, mean: {gray_mean:.1f} -> {'Mono' if is_mono else 'Complex'}")
     
     return is_mono
 
@@ -97,11 +98,11 @@ def detect_and_remove_watermark(image, watermark_texts=['RawLazy.Com', 'DL-Raw.S
                     w_box = min(w - x, w_box + 2 * padding)
                     h_box = min(h - y, h_box + 2 * padding)
                     
-                    print(f"Found watermark '{text}' at ({x}, {y}, {w_box}, {h_box})")
+                    # print(f"Found watermark '{text}' at ({x}, {y}, {w_box}, {h_box})")
                     cv2.rectangle(mask, (x, y), (x + w_box, y + h_box), 255, -1)
                     found_watermarks.append((x, y, w_box, h_box))
     except Exception as e:
-        print(f"Full image OCR failed: {e}")
+        pass  # Full image OCR failed silently
     
     # Strategy 2: Check known watermark regions specifically for RawLazy.Com
     # Only check top region if we haven't found RawLazy watermark yet
@@ -135,7 +136,7 @@ def detect_and_remove_watermark(image, watermark_texts=['RawLazy.Com', 'DL-Raw.S
                                 abs_x = search_x + rel_x
                                 abs_y = search_y + rel_y
                                 
-                                print(f"Found top watermark '{text}' at precise location ({abs_x}, {abs_y}, {text_w}, {text_h})")
+                                # print(f"Found top watermark '{text}' at precise location ({abs_x}, {abs_y}, {text_w}, {text_h})")
                                 # Add minimal padding around just the text
                                 padding = 3
                                 mask_x = max(0, abs_x - padding)
@@ -179,7 +180,7 @@ def detect_and_remove_watermark(image, watermark_texts=['RawLazy.Com', 'DL-Raw.S
                                 abs_x = search_x + rel_x
                                 abs_y = search_y + rel_y
                                 
-                                print(f"Found bottom watermark '{text}' at precise location ({abs_x}, {abs_y}, {text_w}, {text_h})")
+                                # print(f"Found bottom watermark '{text}' at precise location ({abs_x}, {abs_y}, {text_w}, {text_h})")
                                 # Add minimal padding around just the text
                                 padding = 3
                                 mask_x = max(0, abs_x - padding)
@@ -196,10 +197,10 @@ def detect_and_remove_watermark(image, watermark_texts=['RawLazy.Com', 'DL-Raw.S
     
     # Apply inpainting if any watermarks were found
     if np.any(mask):
-        print("Applying inpainting to remove watermarks...")
+        # print("Applying inpainting to remove watermarks...")
         result_image = cv2.inpaint(result_image, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
     else:
-        print("No watermarks detected")
+        pass  # No watermarks detected
     
     return result_image
 
@@ -258,7 +259,7 @@ def clean_cbz(file_path: str, remove_watermarks: bool = True) -> str:
                     
                     # Check if it's an image file and watermark removal is enabled
                     if remove_watermarks and filename.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tiff')):
-                        print(f"Processing image: {filename}")
+                        # print(f"Processing image: {filename}")
                         try:
                             # Process the image to remove watermarks
                             processed_data = process_image_for_watermarks(file_data)

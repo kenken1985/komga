@@ -115,7 +115,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         if target_folder and target_folder.strip():
             remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}"
         else:
-            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New_Volume"
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New"
         
         # Build the scp command based on authentication method
         if KINDLE_SSH_PASSWORD:
@@ -146,7 +146,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
-            folder_display = target_folder if target_folder else "New_Volume"
+            folder_display = target_folder if target_folder else "New"
             print(f"Successfully uploaded {filename} to Kindle folder: {folder_display}")
             if result.stdout.strip():
                 print(f"Stdout: {result.stdout}")
@@ -173,10 +173,81 @@ def push_to_kindle(file_path: str, target_folder: str = None):
             print(f"Warning: Failed to remove temporary file {file_path}: {cleanup_err}")
 
 
-def create_remote_folder(folder_name: str):
+def check_kindle_connectivity() -> bool:
     """
-    Create folder on Kindle device using ssh.
+    Check if the Kindle device is reachable via SSH.
+    
+    Returns:
+        bool: True if Kindle is reachable, False otherwise
     """
+    print(f"Checking connectivity to Kindle at {KINDLE_IP}:{KINDLE_SSH_PORT}...")
+    
+    try:
+        # Build a simple SSH command to test connectivity
+        if KINDLE_SSH_PASSWORD:
+            # Password-based authentication
+            command = [
+                "sshpass",
+                "-p", KINDLE_SSH_PASSWORD,
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                "echo 'connection_test'"
+            ]
+        else:
+            # Passwordless authentication (using SSH keys)
+            command = [
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                "echo 'connection_test'"
+            ]
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        
+        if result.returncode == 0:
+            print("✓ Kindle connectivity check passed")
+            return True
+        else:
+            print("✗ Kindle connectivity check failed")
+            if result.stderr:
+                print(f"Connection error: {result.stderr.strip()}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("✗ Kindle connectivity check timed out")
+        return False
+    except Exception as e:
+        print(f"✗ Kindle connectivity check error: {e}")
+        return False
+
+def create_remote_folder(folder_name: str) -> bool:
+    """
+    Create a remote folder on Kindle device.
+    Checks connectivity first and terminates if Kindle is unreachable.
+    
+    Args:
+        folder_name: Name of the folder to create
+        
+    Returns:
+        bool: True if folder was created successfully, False otherwise
+    """
+    # First check if Kindle is reachable
+    if not check_kindle_connectivity():
+        print("❌ ERROR: Cannot reach Kindle device. Terminating push operation.")
+        print(f"Please check that:")
+        print(f"  - Kindle IP ({KINDLE_IP}) is correct")
+        print(f"  - Kindle SSH port ({KINDLE_SSH_PORT}) is correct") 
+        print(f"  - Kindle is connected to the network")
+        print(f"  - SSH credentials are correct")
+        sys.exit(1)  # Terminate the entire script
+    
     print(f"Creating folder on Kindle: {folder_name}")
     
     try:
@@ -211,32 +282,37 @@ def create_remote_folder(folder_name: str):
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         
         if result.returncode == 0:
-            print(f"Successfully created folder: {folder_name}")
+            print(f"✓ Successfully created folder: {folder_name}")
             if result.stdout.strip():
                 print(f"Stdout: {result.stdout}")
+            return True
         else:
-            print(f"Error creating folder on Kindle.")
+            print(f"✗ Error creating folder on Kindle.")
             print(f"Return code: {result.returncode}")
             if result.stderr:
                 print(f"Stderr: {result.stderr}")
             if result.stdout:
                 print(f"Stdout: {result.stdout}")
+            return False
 
     except subprocess.TimeoutExpired:
-        print(f"SSH command timed out after 30 seconds")
+        print(f"✗ SSH command timed out after 30 seconds")
+        return False
     except Exception as e:
-        print(f"An error occurred while creating folder: {e}")
+        print(f"✗ An error occurred while creating folder: {e}")
+        return False
 
-def process_with_kcc(book_path: str, output_path: str) -> bool:
+def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
     """
     Process a comic file using Kindle Comic Converter (KCC).
+    Always applies watermark removal before KCC processing.
     
     Args:
         book_path: Path to the comic file (CBZ/CBR)
         output_path: Directory where processed file should be saved
         
     Returns:
-        bool: True if processing succeeded, False otherwise
+        tuple: (success_status, output_file_path)
     """
     kcc_script_dir = os.path.dirname(os.path.abspath(__file__))
     kcc_script = os.path.join(kcc_script_dir, "kcc-c2e.py")
@@ -249,15 +325,23 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             print(f"Error: KCC script not found at {kcc_script} either.")
             return False
     
+    # Always clean the CBZ first (watermark removal)
+    print("Applying watermark removal before KCC processing...")
+    cleaned_cbz_path = clean_cbz(book_path)
+    if not cleaned_cbz_path or not os.path.exists(cleaned_cbz_path):
+        print("CBZ cleaning failed, using original file")
+        cleaned_cbz_path = book_path
+    else:
+        print(f"CBZ cleaned successfully: {cleaned_cbz_path}")
+    
     # Get base filename without extension
     base_filename = os.path.splitext(os.path.basename(book_path))[0]
     # Create full output path with specific filename
     output_file_path = os.path.join(output_path, f"{base_filename}_kcc.cbz")
     
-    print(f"Processing with KCC: {book_path}")
+    print(f"Processing with KCC: {cleaned_cbz_path}")
     print(f"Output file: {output_file_path}")
     
-    cleaned_cbz_path = None
     try:
         # Add PYTHONPATH to include the directory containing kindlecomicconverter module
         env = os.environ.copy()
@@ -267,14 +351,14 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             "-c",
             f"import sys; sys.path.insert(0, '{os.path.dirname(kcc_script)}'); exec(open('{kcc_script}').read())",
             "-p", "KPW5",
-            "-q",
-            "-u",
+#            "-q",
+#            "-u",
             "-m",
             "--cp", "2",
             "--mozjpeg",
             "-f", "CBZ",
             "-o", output_file_path,
-            book_path
+            cleaned_cbz_path  # Use cleaned CBZ
         ]
         print(f"Executing KCC command with PYTHONPATH={env['PYTHONPATH']}")
         print(f"Command: {' '.join(command)}")
@@ -283,7 +367,7 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
             print("KCC processing completed successfully")
             if result.stdout.strip():
                 print(f"KCC stdout: {result.stdout}")
-            return True, cleaned_cbz_path
+            return True, output_file_path
         else:
             print("Error during KCC processing")
             print(f"Return code: {result.returncode}")
@@ -291,39 +375,13 @@ def process_with_kcc(book_path: str, output_path: str) -> bool:
                 print(f"KCC stderr: {result.stderr}")
             if result.stdout:
                 print(f"KCC stdout: {result.stdout}")
-            # Check for extraction error in KCC output
-            if "Failed to extract archive" in result.stdout or "Failed to extract archive" in result.stderr:
-                print("Detected extraction error. Attempting to clean the CBZ and retry...")
-                cleaned_cbz_path = clean_cbz(book_path)
-                if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
-                    print(f"Retrying KCC with cleaned CBZ: {cleaned_cbz_path}")
-                    # Retry KCC with the cleaned CBZ
-                    command[-1] = cleaned_cbz_path  # Update the book path in the command
-                    result2 = subprocess.run(command, capture_output=True, text=True, timeout=600)
-                    if result2.returncode == 0:
-                        print("KCC processing completed successfully after cleaning")
-                        if result2.stdout.strip():
-                            print(f"KCC stdout: {result2.stdout}")
-                        return True, cleaned_cbz_path
-                    else:
-                        print("KCC still failed after cleaning.")
-                        if result2.stderr:
-                            print(f"KCC stderr: {result2.stderr}")
-                        if result2.stdout:
-                            print(f"KCC stdout: {result2.stdout}")
-                        return False, cleaned_cbz_path
-                else:
-                    print("CBZ cleaning failed.")
-                    return False, cleaned_cbz_path
             return False, cleaned_cbz_path
     except subprocess.TimeoutExpired:
         print("KCC processing timed out after 600 seconds")
         return False, cleaned_cbz_path
     except Exception as e:
-        print(f"Exception during KCC processing: {e}")
+        print(f"Error during KCC processing: {e}")
         return False, cleaned_cbz_path
-
-# clean_cbz is now imported from clean_cbz.py
 
 def main():
     """
@@ -333,7 +391,7 @@ def main():
     print(f"Processing files: {file_paths}")
 
     # Determine target folder based on number of files
-    target_folder = "New_Volume"
+    target_folder = "New"
     if len(file_paths) > 1:
         # For multiple files, try to extract series name from first file
         series_name = extract_series_name_from_path(file_paths[0])
@@ -341,9 +399,9 @@ def main():
             target_folder = series_name
             print(f"Multiple files detected, using series folder: {target_folder}")
         else:
-            print("Multiple files detected but couldn't determine series, using 'New_Volume' folder")
+            print("Multiple files detected but couldn't determine series, using 'New' folder")
     else:
-        print("Single file detected, using 'New_Volume' folder")
+        print("Single file detected, using 'New' folder")
 
     # Create the target folder on Kindle
     create_remote_folder(target_folder)
