@@ -112,39 +112,54 @@ def push_to_kindle(file_path: str, target_folder: str = None):
     try:
         filename = os.path.basename(file_path)
         
-        # Determine remote path based on target folder
+        # Determine remote path based on target folder and check if we need special handling
+        use_shell = False
         if target_folder and target_folder.strip():
-            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}"
+            # Check if target folder has spaces or non-ASCII characters
+            if ' ' in target_folder or any(ord(c) > 127 for c in target_folder):
+                # Use shell command with proper quoting for special characters
+                remote_path = f"{KINDLE_USER}@{KINDLE_IP}:\"{KINDLE_REMOTE_PATH}/{target_folder}/\""
+                use_shell = True
+            else:
+                remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}/"
         else:
-            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New"
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New/"
         
-        # Build the scp command based on authentication method
-        if KINDLE_SSH_PASSWORD:
-            # Password-based authentication
-            command = [
-                "sshpass",
-                "-p", KINDLE_SSH_PASSWORD,
-                "scp",
-                "-P", KINDLE_SSH_PORT,
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=/dev/null",
-                file_path,
-                remote_path
-            ]
+        # Build the scp command based on authentication method and whether we need shell
+        if use_shell:
+            # Use shell execution for paths with special characters
+            if KINDLE_SSH_PASSWORD:
+                command_str = f"sshpass -p {KINDLE_SSH_PASSWORD} scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}"
+            else:
+                command_str = f"scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}"
+            
+            print(f"Executing shell command: {command_str}")
+            result = subprocess.run(command_str, shell=True, capture_output=True, text=True, timeout=300)
         else:
-            # Passwordless authentication (using SSH keys)
-            command = [
-                "scp",
-                "-P", KINDLE_SSH_PORT,
-                "-o", "StrictHostKeyChecking=no",
-                "-o", "UserKnownHostsFile=/dev/null",
-                file_path,
-                remote_path
-            ]
-        
-        print(f"Executing command: {' '.join(command)}")
-        
-        result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+            # Use normal subprocess list for simple paths
+            if KINDLE_SSH_PASSWORD:
+                command = [
+                    "sshpass",
+                    "-p", KINDLE_SSH_PASSWORD,
+                    "scp",
+                    "-P", KINDLE_SSH_PORT,
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    file_path,
+                    remote_path
+                ]
+            else:
+                command = [
+                    "scp",
+                    "-P", KINDLE_SSH_PORT,
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    file_path,
+                    remote_path
+                ]
+            
+            print(f"Executing command: {' '.join(command)}")
+            result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         
         if result.returncode == 0:
             folder_display = target_folder if target_folder else "New"
@@ -254,9 +269,13 @@ def create_remote_folder(folder_name: str) -> bool:
     try:
         remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{folder_name}"
         
-        # Use double-quote + single-quote approach that works with SSH
-        # Format: "'/path/with spaces'" - outer double quotes protect inner single quotes
-        mkdir_command = f"mkdir -p \"'{KINDLE_REMOTE_PATH}/{folder_name}'\""
+        # For SSH command, escape folder name properly 
+        # Check if folder name has spaces or special characters
+        if ' ' in folder_name or any(ord(c) > 127 for c in folder_name):
+            # Use shell command with proper quoting for special characters
+            mkdir_command = f"mkdir -p \"{KINDLE_REMOTE_PATH}/{folder_name}\""
+        else:
+            mkdir_command = f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
         
         # Build the ssh command to create directory
         if KINDLE_SSH_PASSWORD:

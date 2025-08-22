@@ -1,4 +1,4 @@
-services:
+ddservices:
   komga-kindle-dev:
     build:
       context: .

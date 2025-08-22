@@ -8,6 +8,8 @@
 *.jpg
 *.cbz
 
+test_*
+
 ### NodeJS
 node_modules
 
