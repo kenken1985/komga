@@ -61,7 +61,18 @@ RUN apt-get update && \
         python3-psutil \
         python3-slugify \
         p7zip-full \
-        sshpass && \
+        sshpass \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libopencv-dev \
+        libgtk-3-dev \
+        libglib2.0-0 \
+        libmupdf-dev \
+        unrar \
+        libopenblas-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev && \
     echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
     locale-gen en_US.UTF-8 && \
     wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-64bit" -O /usr/bin/kepubify && \
@@ -91,7 +102,18 @@ RUN apt-get update && \
         python3-psutil \
         python3-slugify \
         p7zip-full \
-        sshpass && \
+        sshpass \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libopencv-dev \
+        libgtk-3-dev \
+        libglib2.0-0 \
+        libmupdf-dev \
+        unrar \
+        libopenblas-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev && \
     echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
     locale-gen en_US.UTF-8 && \
     wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-arm64" -O /usr/bin/kepubify && \
