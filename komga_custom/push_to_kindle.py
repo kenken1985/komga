@@ -5,6 +5,7 @@ import zipfile
 import subprocess
 import io
 import urllib.parse
+import shlex
 from PIL import Image
 from typing import List
 from pathlib import Path
@@ -90,7 +91,7 @@ def extract_series_name_from_path(file_path: str) -> str:
         # Clean up series name for Kindle folder
         # Remove special characters, limit length
         clean_name = ''.join(c for c in series_name if c.isalnum() or c in ' -_').strip()
-        return clean_name[:50] if clean_name else None  # Limit to 50 characters
+        return clean_name[:100] if clean_name else None  # Increased to 100 characters for full series names
     except Exception:
         return None
 
@@ -253,6 +254,10 @@ def create_remote_folder(folder_name: str) -> bool:
     try:
         remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{folder_name}"
         
+        # Use double-quote + single-quote approach that works with SSH
+        # Format: "'/path/with spaces'" - outer double quotes protect inner single quotes
+        mkdir_command = f"mkdir -p \"'{KINDLE_REMOTE_PATH}/{folder_name}'\""
+        
         # Build the ssh command to create directory
         if KINDLE_SSH_PASSWORD:
             # Password-based authentication
@@ -264,7 +269,7 @@ def create_remote_folder(folder_name: str) -> bool:
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
                 f"{KINDLE_USER}@{KINDLE_IP}",
-                f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
+                mkdir_command
             ]
         else:
             # Passwordless authentication (using SSH keys)
@@ -274,7 +279,7 @@ def create_remote_folder(folder_name: str) -> bool:
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
                 f"{KINDLE_USER}@{KINDLE_IP}",
-                f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
+                mkdir_command
             ]
         
         print(f"Executing command: {' '.join(command)}")
