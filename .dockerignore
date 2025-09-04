@@ -2,6 +2,18 @@
 .git
 .gitignore
 
+.github
+.gradle
+.idea
+.ipynb_checkpoints
+.kilocode
+.pytest_cache
+build
+gradle
+res
+test*
+venv
+
 # Documentation
 README.md
 *.md
