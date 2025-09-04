@@ -22,6 +22,16 @@ test_*
 **/test*/
 **/venv/
 
+*.png
+*.html
+*.dll
+*.ico
+*.cer
+*.dylib
+
+**/lib/
+
+
 ### NodeJS
 node_modules
 
