@@ -94,6 +94,22 @@ def extract_series_name_from_path(file_path: str) -> str:
         return clean_name[:100] if clean_name else None  # Increased to 100 characters for full series names
     except Exception:
         return None
+def is_epub_file(file_path: str) -> bool:
+    """
+    Check if the file is an EPUB format.
+    
+    Args:
+        file_path: Path to the file to check
+        
+    Returns:
+        bool: True if file is EPUB, False otherwise
+    """
+    if not file_path:
+        return False
+    
+    # Check file extension
+    file_ext = os.path.splitext(file_path)[1].lower()
+    return file_ext == '.epub'
 
 def push_to_kindle(file_path: str, target_folder: str = None):
     """
@@ -410,6 +426,7 @@ def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
 def main():
     """
     Main function to process and push files to Kindle with folder organization.
+    Handles both comic files (with KCC processing) and EPUB files (direct push).
     """
     file_paths = get_files_list_from_webui()
     print(f"Processing files: {file_paths}")
@@ -435,28 +452,34 @@ def main():
 
     for file_path in file_paths:
         print(f"--- Processing file: {file_path} ---")
-        kcc_output_dir = temp_dir
-
-        kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
-        base_filename = os.path.splitext(os.path.basename(file_path))[0]
-        kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
-
-        if kcc_success:
-            if os.path.exists(kcc_output_file):
-                print(f"KCC processing successful. Pushing file to Kindle.")
-                push_to_kindle(kcc_output_file, target_folder)
-            else:
-                print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
+        
+        # Check if file is EPUB
+        if is_epub_file(file_path):
+            print(f"EPUB file detected, skipping KCC processing and pushing directly.")
+            push_to_kindle(file_path, target_folder)
         else:
-            print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+            # Process comic files with KCC
+            kcc_output_dir = temp_dir
+            kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
+            base_filename = os.path.splitext(os.path.basename(file_path))[0]
+            kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
 
-        # Remove cleaned CBZ if it was created
-        if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
-            try:
-                os.remove(cleaned_cbz_path)
-                print(f"Removed cleaned CBZ: {cleaned_cbz_path}")
-            except Exception as cleanup_err:
-                print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
+            if kcc_success:
+                if os.path.exists(kcc_output_file):
+                    print(f"KCC processing successful. Pushing file to Kindle.")
+                    push_to_kindle(kcc_output_file, target_folder)
+                else:
+                    print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
+            else:
+                print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+
+            # Remove cleaned CBZ if it was created
+            if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
+                try:
+                    os.remove(cleaned_cbz_path)
+                    print(f"Removed cleaned CBZ: {cleaned_cbz_path}")
+                except Exception as cleanup_err:
+                    print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
 
         print(f"--- Finished processing file: {file_path} ---")
 

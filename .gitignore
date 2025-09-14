@@ -9,7 +9,13 @@
 *.cbz
 
 test_*
+CHANGELOG.md
+outsource_source_code.md
 
+*.json
+.git/
+**/locales/
+**/docs/
 .github/
 .gradle/
 .idea/
@@ -22,6 +28,8 @@ test_*
 **/test*/
 **/venv/
 
+*.jpg
+*.webp
 *.png
 *.html
 *.dll
