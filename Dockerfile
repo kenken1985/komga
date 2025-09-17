@@ -12,7 +12,7 @@ COPY komga-webui/ .
 RUN npm run build
 
 # Stage 2: Build the backend
-FROM gradle:8.14.3-jdk21 AS backend-build
+FROM gradle:8.14.3-jdk24 AS backend-build
 WORKDIR /app
 # Set up Gradle cache directory
 ENV GRADLE_USER_HOME=/home/gradle/.gradle
@@ -33,7 +33,7 @@ COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/publ
 RUN gradle clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
 
 # Stage 3: Extract layers
-FROM eclipse-temurin:21-jre AS builder
+FROM eclipse-temurin:24-jre AS builder
 WORKDIR /builder
 COPY --from=backend-build /app/komga/build/libs/komga-*.jar application.jar
 RUN java -Djarmode=tools -jar application.jar extract --layers --destination extracted
@@ -42,7 +42,7 @@ RUN java -Djarmode=tools -jar application.jar extract --layers --destination ext
 # amd64 runtime
 FROM ubuntu:25.04 AS runtime-amd64
 ENV JAVA_HOME=/opt/java/openjdk
-COPY --from=eclipse-temurin:21-jre $JAVA_HOME $JAVA_HOME
+COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 RUN apt-get update && \
     apt-get install -y \
@@ -83,7 +83,7 @@ ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/x86_64-linux-gnu"
 # arm64 runtime
 FROM ubuntu:25.04 AS runtime-arm64
 ENV JAVA_HOME=/opt/java/openjdk
-COPY --from=eclipse-temurin:21-jre $JAVA_HOME $JAVA_HOME
+COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 RUN apt-get update && \
     apt-get install -y \
