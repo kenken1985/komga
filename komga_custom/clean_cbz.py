@@ -5,7 +5,7 @@ import numpy as np
 import pytesseract
 import tempfile
 import os
-#d
+
 def is_mono_color_background(image, x, y, w, h, threshold=50):
     """
     Check if a region has a mono-color or near mono-color background.
