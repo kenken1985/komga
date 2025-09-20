@@ -21,6 +21,7 @@ import org.gotson.komga.domain.model.Author
 import org.gotson.komga.domain.model.BookSearch
 import org.gotson.komga.domain.model.Dimension
 import org.gotson.komga.domain.model.DomainEvent
+import org.gotson.komga.domain.model.HistoricalEvent
 import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.domain.model.MarkSelectedPreference
 import org.gotson.komga.domain.model.Media
@@ -35,6 +36,7 @@ import org.gotson.komga.domain.model.SeriesSearch
 import org.gotson.komga.domain.model.ThumbnailSeries
 import org.gotson.komga.domain.model.WebLink
 import org.gotson.komga.domain.persistence.BookRepository
+import org.gotson.komga.domain.persistence.HistoricalEventRepository
 import org.gotson.komga.domain.persistence.SeriesCollectionRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -114,6 +116,7 @@ class SeriesController(
   private val bookRepository: BookRepository,
   private val bookDtoRepository: BookDtoRepository,
   private val collectionRepository: SeriesCollectionRepository,
+  private val historicalEventRepository: HistoricalEventRepository,
   private val readProgressDtoRepository: ReadProgressDtoRepository,
   private val eventPublisher: ApplicationEventPublisher,
   private val contentDetector: ContentDetector,
@@ -905,10 +908,52 @@ class SeriesController(
       val reader = process.inputStream.bufferedReader()
       val output = reader.readText()
       logger.info { "Push to kindle script output: $output" }
-      process.waitFor()
+      val exitCode = process.waitFor()
+      
+      if (exitCode == 0) {
+        // Parse Kindle path from output
+        val kindlePath = extractKindlePathFromOutput(output)
+        if (kindlePath != null) {
+          // Create historical events for each book in the series
+          books.forEach { book ->
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindle(book, seriesRepository.findByIdOrNull(seriesId)!!, kindlePath))
+          }
+          logger.info { "[push_to_kindle] Successfully created historical events for series: $seriesId, Kindle path: $kindlePath, books: ${books.size}" }
+        } else {
+          logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for series: $seriesId" }
+        }
+      } else {
+        logger.error { "[push_to_kindle] Push to kindle script failed with exit code: $exitCode for series: $seriesId" }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed with exit code: $exitCode")
+      }
     } catch (e: Exception) {
       logger.error(e) { "Error while executing push to kindle script for series: $seriesId" }
       throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
     }
+  }
+
+  private fun extractKindlePathFromOutput(output: String): String? {
+    // Extract the target folder from the output
+    // Look for structured output pattern: HISTORICAL_EVENT_KINDLE_PATH:folder_name
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("HISTORICAL_EVENT_KINDLE_PATH:")) {
+        return line.substringAfter("HISTORICAL_EVENT_KINDLE_PATH:").trim()
+      }
+      // Fallback to old patterns for backward compatibility
+      if (line.contains("Successfully uploaded") && line.contains("to Kindle folder:")) {
+        val match = Regex("Successfully uploaded .* to Kindle folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+      if (line.contains("Multiple files detected, using series folder:")) {
+        val match = Regex("Multiple files detected, using series folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+    }
+    return null
   }
 }

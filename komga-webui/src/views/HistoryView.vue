@@ -69,7 +69,7 @@
           <v-simple-table>
             <tbody>
             <tr v-for="[key, value] in Object.entries(dialogDetailsItem.properties)" :key="key">
-              <td class="text-capitalize font-weight-bold">{{ key }}</td>
+              <td class="text-capitalize font-weight-bold">{{ formatPropertyKey(key) }}</td>
               <td>{{ value }}</td>
             </tr>
             <tr v-if="getPageHash(dialogDetailsItem)">
@@ -172,9 +172,18 @@ export default Vue.extend({
           return 'mdi-archive-refresh'
         case 'BookImported':
           return 'mdi-import'
+        case 'BookPushedToKindle':
+          return 'mdi-send'
         default:
           return ''
       }
+    },
+    formatPropertyKey(key: string): string {
+      // Convert snake_case to Title Case with spaces
+      return key
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
     },
     async loadData() {
       this.loading = true

@@ -15,6 +15,7 @@ import org.gotson.komga.application.tasks.TaskEmitter
 import org.gotson.komga.domain.model.BookSearch
 import org.gotson.komga.domain.model.Dimension
 import org.gotson.komga.domain.model.DomainEvent
+import org.gotson.komga.domain.model.HistoricalEvent
 import org.gotson.komga.domain.model.ImageConversionException
 import org.gotson.komga.domain.model.MarkSelectedPreference
 import org.gotson.komga.domain.model.Media
@@ -28,8 +29,10 @@ import org.gotson.komga.domain.model.SearchOperator
 import org.gotson.komga.domain.model.ThumbnailBook
 import org.gotson.komga.domain.persistence.BookMetadataRepository
 import org.gotson.komga.domain.persistence.BookRepository
+import org.gotson.komga.domain.persistence.HistoricalEventRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadListRepository
+import org.gotson.komga.domain.persistence.SeriesRepository
 import org.gotson.komga.domain.persistence.ThumbnailBookRepository
 import org.gotson.komga.domain.service.BookAnalyzer
 import org.gotson.komga.domain.service.BookLifecycle
@@ -106,9 +109,11 @@ class BookController(
   private val bookLifecycle: BookLifecycle,
   private val bookRepository: BookRepository,
   private val bookMetadataRepository: BookMetadataRepository,
+  private val historicalEventRepository: HistoricalEventRepository,
   private val mediaRepository: MediaRepository,
   private val bookDtoRepository: BookDtoRepository,
   private val readListRepository: ReadListRepository,
+  private val seriesRepository: SeriesRepository,
   private val contentDetector: ContentDetector,
   private val imageAnalyzer: ImageAnalyzer,
   private val eventPublisher: ApplicationEventPublisher,
@@ -794,11 +799,56 @@ class BookController(
         val preface = "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting...\n"
         val output = reader.readText()
         logger.info { "Push to kindle script output: $preface$output" }
-        process.waitFor()
+        val exitCode = process.waitFor()
+        
+        if (exitCode == 0) {
+          // Parse Kindle path from output
+          val kindlePath = extractKindlePathFromOutput(output)
+          if (kindlePath != null) {
+            // Create historical event for successful push
+            val series = book.seriesId?.let { seriesRepository.findByIdOrNull(it) }
+            if (series != null) {
+              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindle(book, series, kindlePath))
+            } else {
+              logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping historical event" }
+            }
+            logger.info { "[push_to_kindle] Successfully created historical event for book: $bookId, Kindle path: $kindlePath" }
+          } else {
+            logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
+          }
+        } else {
+          logger.error { "[push_to_kindle] Push to kindle script failed with exit code: $exitCode for book: $bookId" }
+          throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed with exit code: $exitCode")
+        }
       } catch (e: Exception) {
         logger.error(e) { "Error while executing push to kindle script for book: $bookId" }
         throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
       }
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  private fun extractKindlePathFromOutput(output: String): String? {
+    // Extract the target folder from the output
+    // Look for structured output pattern: HISTORICAL_EVENT_KINDLE_PATH:folder_name
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("HISTORICAL_EVENT_KINDLE_PATH:")) {
+        return line.substringAfter("HISTORICAL_EVENT_KINDLE_PATH:").trim()
+      }
+      // Fallback to old patterns for backward compatibility
+      if (line.contains("Successfully uploaded") && line.contains("to Kindle folder:")) {
+        val match = Regex("Successfully uploaded .* to Kindle folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+      if (line.contains("Multiple files detected, using series folder:")) {
+        val match = Regex("Multiple files detected, using series folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+    }
+    return null
   }
 }

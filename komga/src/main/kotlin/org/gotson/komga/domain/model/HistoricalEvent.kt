@@ -90,4 +90,20 @@ sealed class HistoricalEvent(
           "page media type" to page.mediaType,
         ),
     )
+
+  class BookPushedToKindle(
+    book: Book,
+    series: Series,
+    kindlePath: String,
+  ) : HistoricalEvent(
+      type = "BookPushedToKindle",
+      bookId = book.id,
+      seriesId = series.id,
+      properties =
+        mapOf(
+          "name" to book.path.toString(),
+          "series" to series.name,
+          "kindle_path" to kindlePath,
+        ),
+    )
 }

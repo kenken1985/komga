@@ -711,6 +711,7 @@
       "BookConverted": "Book converted",
       "BookFileDeleted": "Book file deleted",
       "BookImported": "Book imported",
+      "BookPushedToKindle": "Book pushed to Kindle",
       "DuplicatePageDeleted": "Duplicate page deleted",
       "SeriesFolderDeleted": "Series folder deleted"
     },

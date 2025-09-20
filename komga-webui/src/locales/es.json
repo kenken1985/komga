@@ -711,6 +711,7 @@
       "BookConverted": "Libro convertido",
       "BookFileDeleted": "Archivo de libro eliminado",
       "BookImported": "Libro importado",
+      "BookPushedToKindle": "Libro enviado a Kindle",
       "DuplicatePageDeleted": "Página duplicada eliminada",
       "SeriesFolderDeleted": "Carpeta de serie eliminada"
     },

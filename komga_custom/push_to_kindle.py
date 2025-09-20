@@ -164,6 +164,8 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         if result.returncode == 0:
             folder_display = target_folder if target_folder else "New"
             print(f"Successfully uploaded {filename} to Kindle folder: {folder_display}")
+            # Add structured output for better parsing by backend
+            print(f"HISTORICAL_EVENT_KINDLE_PATH:{folder_display}")
             if result.stdout.strip():
                 print(f"Stdout: {result.stdout}")
         else:
