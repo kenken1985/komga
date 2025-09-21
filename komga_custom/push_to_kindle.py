@@ -413,6 +413,7 @@ def main():
     """
     Main function to process and push files to Kindle with folder organization.
     """
+    print("SCRIPT_STATUS:STARTING")
     file_paths = get_files_list_from_webui()
     print(f"Processing files: {file_paths}")
 
@@ -430,13 +431,22 @@ def main():
         print("Single file detected, using 'New' folder")
 
     # Create the target folder on Kindle
-    create_remote_folder(target_folder)
+    print("SCRIPT_STATUS:CREATING_FOLDER")
+    folder_success = create_remote_folder(target_folder)
+    if not folder_success:
+        print("SCRIPT_STATUS:FAILED")
+        print("SCRIPT_ERROR_CODE:FOLDER_CREATION_FAILED")
+        print("SCRIPT_ERROR_MESSAGE:Failed to create folder on Kindle device")
+        sys.exit(1)
 
     temp_dir = '/tmp'
     os.makedirs(temp_dir, exist_ok=True)
 
+    all_success = True
     for file_path in file_paths:
         print(f"--- Processing file: {file_path} ---")
+        print(f"FILE_STATUS:PROCESSING")
+        print(f"FILE_PATH:{file_path}")
         kcc_output_dir = temp_dir
 
         kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
@@ -446,11 +456,20 @@ def main():
         if kcc_success:
             if os.path.exists(kcc_output_file):
                 print(f"KCC processing successful. Pushing file to Kindle.")
+                print(f"FILE_STATUS:KCC_SUCCESS")
                 push_to_kindle(kcc_output_file, target_folder)
             else:
                 print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
+                print(f"FILE_STATUS:FAILED")
+                print(f"FILE_ERROR_CODE:OUTPUT_FILE_NOT_FOUND")
+                print(f"FILE_ERROR_MESSAGE:KCC reported success, but output file not found")
+                all_success = False
         else:
             print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+            print(f"FILE_STATUS:FAILED")
+            print(f"FILE_ERROR_CODE:KCC_PROCESSING_FAILED")
+            print(f"FILE_ERROR_MESSAGE:KCC processing failed")
+            all_success = False
 
         # Remove cleaned CBZ if it was created
         if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
@@ -461,6 +480,15 @@ def main():
                 print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
 
         print(f"--- Finished processing file: {file_path} ---")
+
+    if all_success:
+        print("SCRIPT_STATUS:SUCCESS")
+    else:
+        print("SCRIPT_STATUS:FAILED")
+        print("SCRIPT_ERROR_CODE:ONE_OR_MORE_FILES_FAILED")
+        print("SCRIPT_ERROR_MESSAGE:One or more files failed to process")
+        # Exit with non-zero code to ensure Kotlin controllers detect the failure
+        sys.exit(1)
 
 
 if __name__ == "__main__":

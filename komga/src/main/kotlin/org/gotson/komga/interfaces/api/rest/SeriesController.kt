@@ -899,6 +899,14 @@ class SeriesController(
       throw ResponseStatusException(HttpStatus.NOT_FOUND, "No books in series")
     }
 
+    val series = seriesRepository.findByIdOrNull(seriesId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+    // Create initialization events for each book in the series
+    books.forEach { book ->
+      historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
+    }
+    logger.info { "[push_to_kindle] Created initialization events for series: $seriesId, books: ${books.size}" }
+
     try {
       val command = mutableListOf("python3", "/app/komga_custom/push_to_kindle.py")
       command.addAll(bookPaths)
@@ -914,21 +922,36 @@ class SeriesController(
         // Parse Kindle path from output
         val kindlePath = extractKindlePathFromOutput(output)
         if (kindlePath != null) {
-          // Create historical events for each book in the series
+          // Create success events for each book in the series
           books.forEach { book ->
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindle(book, seriesRepository.findByIdOrNull(seriesId)!!, kindlePath))
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath))
           }
-          logger.info { "[push_to_kindle] Successfully created historical events for series: $seriesId, Kindle path: $kindlePath, books: ${books.size}" }
+          logger.info { "[push_to_kindle] Successfully created success events for series: $seriesId, Kindle path: $kindlePath, books: ${books.size}" }
         } else {
           logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for series: $seriesId" }
+          // Create success events even without kindle path
+          books.forEach { book ->
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, ""))
+          }
         }
       } else {
-        logger.error { "[push_to_kindle] Push to kindle script failed with exit code: $exitCode for series: $seriesId" }
-        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed with exit code: $exitCode")
+        // Script failed - parse error from output
+        val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
+        logger.error { "[push_to_kindle] Script failed for series: $seriesId, exit code: $exitCode, error: $errorMessage" }
+        // Create failure events for each book in the series
+        books.forEach { book ->
+          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+        }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed: $errorMessage")
       }
     } catch (e: Exception) {
       logger.error(e) { "Error while executing push to kindle script for series: $seriesId" }
-      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
+      // Create failure events for each book in the series
+      val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
+      books.forEach { book ->
+        historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+      }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script: $errorMessage")
     }
   }
 
@@ -952,6 +975,23 @@ class SeriesController(
         if (match != null) {
           return match.groupValues[1].trim()
         }
+      }
+    }
+    return null
+  }
+
+  private fun extractErrorFromOutput(output: String): String? {
+    // Extract error information from the output
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("SCRIPT_ERROR_MESSAGE:")) {
+        return line.substringAfter("SCRIPT_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("KCC_ERROR_MESSAGE:")) {
+        return line.substringAfter("KCC_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("FILE_ERROR_MESSAGE:")) {
+        return line.substringAfter("FILE_ERROR_MESSAGE:").trim()
       }
     }
     return null

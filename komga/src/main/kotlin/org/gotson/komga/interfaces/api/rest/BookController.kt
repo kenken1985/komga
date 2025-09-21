@@ -791,6 +791,15 @@ class BookController(
         throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book is not ready")
       }
 
+      // Create initialization event
+      val series = book.seriesId?.let { seriesRepository.findByIdOrNull(it) }
+      if (series != null) {
+        historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
+        logger.info { "[push_to_kindle] Created initialization event for book: $bookId" }
+      } else {
+        logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping initialization event" }
+      }
+
       try {
         val processBuilder = ProcessBuilder("python3", "/app/komga_custom/push_to_kindle.py", book.url.path)
         processBuilder.redirectErrorStream(true)
@@ -805,24 +814,38 @@ class BookController(
           // Parse Kindle path from output
           val kindlePath = extractKindlePathFromOutput(output)
           if (kindlePath != null) {
-            // Create historical event for successful push
-            val series = book.seriesId?.let { seriesRepository.findByIdOrNull(it) }
+            // Create success event for successful push
             if (series != null) {
-              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindle(book, series, kindlePath))
+              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath))
             } else {
-              logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping historical event" }
+              logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping success event" }
             }
-            logger.info { "[push_to_kindle] Successfully created historical event for book: $bookId, Kindle path: $kindlePath" }
+            logger.info { "[push_to_kindle] Successfully created success event for book: $bookId, Kindle path: $kindlePath" }
           } else {
             logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
+            // Create success event even without kindle path
+            if (series != null) {
+              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, ""))
+            }
           }
         } else {
-          logger.error { "[push_to_kindle] Push to kindle script failed with exit code: $exitCode for book: $bookId" }
-          throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed with exit code: $exitCode")
+          // Script failed - parse error from output
+          val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
+          logger.error { "[push_to_kindle] Script failed for book: $bookId, exit code: $exitCode, error: $errorMessage" }
+          // Create failure event
+          if (series != null) {
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+          }
+          throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed: $errorMessage")
         }
       } catch (e: Exception) {
         logger.error(e) { "Error while executing push to kindle script for book: $bookId" }
-        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script")
+        // Create failure event
+        val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
+        if (series != null) {
+          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+        }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script: $errorMessage")
       }
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
@@ -847,6 +870,23 @@ class BookController(
         if (match != null) {
           return match.groupValues[1].trim()
         }
+      }
+    }
+    return null
+  }
+
+  private fun extractErrorFromOutput(output: String): String? {
+    // Extract error information from the output
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("SCRIPT_ERROR_MESSAGE:")) {
+        return line.substringAfter("SCRIPT_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("KCC_ERROR_MESSAGE:")) {
+        return line.substringAfter("KCC_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("FILE_ERROR_MESSAGE:")) {
+        return line.substringAfter("FILE_ERROR_MESSAGE:").trim()
       }
     }
     return null

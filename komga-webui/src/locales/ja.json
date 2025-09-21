@@ -711,7 +711,9 @@
       "BookConverted": "書籍が変換されました",
       "BookFileDeleted": "書籍ファイルが削除されました",
       "BookImported": "書籍がインポートされました",
-      "BookPushedToKindle": "書籍がKindleに送信されました",
+      "BookPushedToKindleInitialized": "Kindle送信開始",
+      "BookPushedToKindleSuccess": "Kindle送信成功",
+      "BookPushedToKindleFailed": "Kindle送信失敗",
       "DuplicatePageDeleted": "重複ページが削除されました",
       "SeriesFolderDeleted": "シリーズのフォルダが削除されました"
     },

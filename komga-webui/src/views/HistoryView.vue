@@ -15,7 +15,10 @@
       }"
     >
       <template v-slot:item.type="{ item }">
-        <v-icon :title="$t(`enums.historical_event_type.${item.type}`)">{{ getIcon(item.type) }}</v-icon>
+        <v-icon
+          :title="$t(`enums.historical_event_type.${item.type}`)"
+          :color="getEventColor(item.type)"
+        >{{ getIcon(item.type) }}</v-icon>
       </template>
 
       <template v-slot:item.seriesId="{ item }">
@@ -172,8 +175,22 @@ export default Vue.extend({
           return 'mdi-archive-refresh'
         case 'BookImported':
           return 'mdi-import'
-        case 'BookPushedToKindle':
+        case 'BookPushedToKindleInitialized':
+        case 'BookPushedToKindleSuccess':
+        case 'BookPushedToKindleFailed':
           return 'mdi-send'
+        default:
+          return ''
+      }
+    },
+    getEventColor(type: string): string {
+      switch (type) {
+        case 'BookPushedToKindleInitialized':
+          return '' // Default color for initialized
+        case 'BookPushedToKindleSuccess':
+          return 'green' // Green for success
+        case 'BookPushedToKindleFailed':
+          return 'red' // Red for failure
         default:
           return ''
       }

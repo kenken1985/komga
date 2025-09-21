@@ -91,19 +91,49 @@ sealed class HistoricalEvent(
         ),
     )
 
-  class BookPushedToKindle(
+  class BookPushedToKindleInitialized(
+    book: Book,
+    series: Series,
+  ) : HistoricalEvent(
+    type = "BookPushedToKindleInitialized",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+      ),
+  )
+
+  class BookPushedToKindleSuccess(
     book: Book,
     series: Series,
     kindlePath: String,
   ) : HistoricalEvent(
-      type = "BookPushedToKindle",
-      bookId = book.id,
-      seriesId = series.id,
-      properties =
-        mapOf(
-          "name" to book.path.toString(),
-          "series" to series.name,
-          "kindle_path" to kindlePath,
-        ),
-    )
+    type = "BookPushedToKindleSuccess",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+        "kindle_path" to kindlePath,
+      ),
+  )
+
+  class BookPushedToKindleFailed(
+    book: Book,
+    series: Series,
+    error: String,
+  ) : HistoricalEvent(
+    type = "BookPushedToKindleFailed",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+        "error" to error,
+      ),
+  )
 }
