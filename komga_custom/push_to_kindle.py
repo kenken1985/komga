@@ -95,6 +95,23 @@ def extract_series_name_from_path(file_path: str) -> str:
     except Exception:
         return None
 
+def is_epub_file(file_path: str) -> bool:
+    """
+    Check if the file is an EPUB format.
+    
+    Args:
+        file_path: Path to the file to check
+        
+    Returns:
+        bool: True if file is EPUB, False otherwise
+    """
+    if not file_path:
+        return False
+    
+    # Check file extension
+    file_ext = os.path.splitext(file_path)[1].lower()
+    return file_ext == '.epub' or file_ext == '.pdf'
+
 def push_to_kindle(file_path: str, target_folder: str = None):
     """
     Pushes a file to Kindle using scp with configurable authentication and folder organization.
@@ -447,11 +464,19 @@ def main():
         print(f"--- Processing file: {file_path} ---")
         print(f"FILE_STATUS:PROCESSING")
         print(f"FILE_PATH:{file_path}")
-        kcc_output_dir = temp_dir
 
-        kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
-        base_filename = os.path.splitext(os.path.basename(file_path))[0]
-        kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
+        # Check if file is EPUB
+        if is_epub_file(file_path):
+            print(f"EPUB file detected, skipping KCC processing and pushing directly.")
+            kcc_output_file = file_path
+            kcc_success = True
+            cleaned_cbz_path = False
+        else:
+            kcc_output_dir = temp_dir
+
+            kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
+            base_filename = os.path.splitext(os.path.basename(file_path))[0]
+            kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
 
         if kcc_success:
             if os.path.exists(kcc_output_file):
