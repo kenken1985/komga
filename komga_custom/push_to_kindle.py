@@ -112,9 +112,10 @@ def is_epub_file(file_path: str) -> bool:
     file_ext = os.path.splitext(file_path)[1].lower()
     return file_ext == '.epub' or file_ext == '.pdf'
 
-def push_to_kindle(file_path: str, target_folder: str = None):
+def push_to_kindle(file_path: str, target_folder: str = None, original_filename: str = None):
     """
     Pushes a file to Kindle using scp with configurable authentication and folder organization.
+    Preserves original filename during SCP transfer.
     """
     print("[push_to_kindle] Received command to push file to Kindle.", flush=True)
     try:
@@ -125,9 +126,11 @@ def push_to_kindle(file_path: str, target_folder: str = None):
     print(f"--- Debug: Pushing to Kindle ---")
     print(f"File path: {file_path}")
     print(f"Target folder: {target_folder}")
+    print(f"Original filename: {original_filename}")
 
     try:
-        filename = os.path.basename(file_path)
+        # Use original filename if provided, otherwise use current filename
+        filename = original_filename if original_filename else os.path.basename(file_path)
         
         # Determine remote path based on target folder and check if we need special handling
         use_shell = False
@@ -146,9 +149,9 @@ def push_to_kindle(file_path: str, target_folder: str = None):
         if use_shell:
             # Use shell execution for paths with special characters
             if KINDLE_SSH_PASSWORD:
-                command_str = f"sshpass -p {KINDLE_SSH_PASSWORD} scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}"
+                command_str = f"sshpass -p {KINDLE_SSH_PASSWORD} scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}\"{filename}\""
             else:
-                command_str = f"scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}"
+                command_str = f"scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}\"{filename}\""
             
             print(f"Executing shell command: {command_str}")
             result = subprocess.run(command_str, shell=True, capture_output=True, text=True, timeout=300)
@@ -163,7 +166,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     file_path,
-                    remote_path
+                    f"{remote_path}{filename}"
                 ]
             else:
                 command = [
@@ -172,7 +175,7 @@ def push_to_kindle(file_path: str, target_folder: str = None):
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     file_path,
-                    remote_path
+                    f"{remote_path}{filename}"
                 ]
             
             print(f"Executing command: {' '.join(command)}")
@@ -345,7 +348,7 @@ def create_remote_folder(folder_name: str) -> bool:
         print(f"✗ An error occurred while creating folder: {e}")
         return False
 
-def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
+def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str, str]:
     """
     Process a comic file using Kindle Comic Converter (KCC).
     Always applies watermark removal before KCC processing.
@@ -355,7 +358,7 @@ def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
         output_path: Directory where processed file should be saved
         
     Returns:
-        tuple: (success_status, output_file_path)
+        tuple: (success_status, output_file_path, original_filename)
     """
     kcc_script_dir = os.path.dirname(os.path.abspath(__file__))
     kcc_script = os.path.join(kcc_script_dir, "kcc-c2e.py")
@@ -410,7 +413,7 @@ def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
             print("KCC processing completed successfully")
             if result.stdout.strip():
                 print(f"KCC stdout: {result.stdout}")
-            return True, output_file_path
+            return True, output_file_path, os.path.basename(book_path)
         else:
             print("Error during KCC processing")
             print(f"Return code: {result.returncode}")
@@ -418,13 +421,13 @@ def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str]:
                 print(f"KCC stderr: {result.stderr}")
             if result.stdout:
                 print(f"KCC stdout: {result.stdout}")
-            return False, cleaned_cbz_path
+            return False, cleaned_cbz_path, os.path.basename(book_path)
     except subprocess.TimeoutExpired:
         print("KCC processing timed out after 600 seconds")
-        return False, cleaned_cbz_path
+        return False, cleaned_cbz_path, os.path.basename(book_path)
     except Exception as e:
         print(f"Error during KCC processing: {e}")
-        return False, cleaned_cbz_path
+        return False, cleaned_cbz_path, os.path.basename(book_path)
 
 def main():
     """
@@ -471,10 +474,11 @@ def main():
             kcc_output_file = file_path
             kcc_success = True
             cleaned_cbz_path = False
+            original_filename = os.path.basename(file_path)
         else:
             kcc_output_dir = temp_dir
 
-            kcc_success, cleaned_cbz_path = process_with_kcc(file_path, kcc_output_dir)
+            kcc_success, cleaned_cbz_path, original_filename = process_with_kcc(file_path, kcc_output_dir)
             base_filename = os.path.splitext(os.path.basename(file_path))[0]
             kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
 
@@ -482,7 +486,7 @@ def main():
             if os.path.exists(kcc_output_file):
                 print(f"KCC processing successful. Pushing file to Kindle.")
                 print(f"FILE_STATUS:KCC_SUCCESS")
-                push_to_kindle(kcc_output_file, target_folder)
+                push_to_kindle(kcc_output_file, target_folder, original_filename)
             else:
                 print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
                 print(f"FILE_STATUS:FAILED")
