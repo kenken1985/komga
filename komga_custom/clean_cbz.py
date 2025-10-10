@@ -267,10 +267,10 @@ def clean_cbz(file_path: str, remove_watermarks: bool = True) -> str:
                         except Exception as e:
                             print(f"Failed to process image {filename}: {e}")
                             # Fall back to original image if processing fails
-                            z_out.writestr(filename.replace('_', '-'), file_data)
+                            z_out.writestr(filename.replace('_', '+'), file_data)
                     else:
                         # Write file as-is
-                        z_out.writestr(filename.replace('_', '-'), file_data)
+                        z_out.writestr(filename.replace('_', '+'), file_data)
         
         print(f"Cleaned CBZ created at: {cleaned_cbz_path}")
         return str(cleaned_cbz_path)
