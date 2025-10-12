@@ -24,6 +24,8 @@ The issue stems from a mismatch between the Vue.js router base path configuratio
 ## Complete Folder Structure
 ```
 komga/
+├── build.gradle.kts                 # Gradle build configuration
+├── Dockerfile                       # Multi-stage Docker build configuration
 ├── komga-webui/
 │   ├── src/
 │   │   ├── functions/
@@ -42,6 +44,12 @@ komga/
 ```
 
 ## Source Code Files Analysis
+
+### File: build.gradle.kts
+This is the main Gradle build configuration file that defines the project structure, dependencies, and build processes. It includes configuration for multi-stage Docker builds and dependency management.
+
+### File: Dockerfile
+Multi-stage Docker build configuration that builds the frontend (Vue.js) and backend (Kotlin/Spring Boot) separately, then combines them into a final production image. This is critical for understanding how the application is deployed and how the frontend static resources are served.
 
 ### File: komga-webui/src/functions/urls.ts
 This file contains the URL configuration logic that determines the base path for the Vue.js router. The current implementation uses `window.resourceBaseUrl` which may not be properly set in the Docker environment.

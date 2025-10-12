@@ -24,6 +24,8 @@ The issue stems from a mismatch between the Vue.js router base path configuratio
 ## Complete Folder Structure
 ```
 komga/
+├── build.gradle.kts                 # Gradle build configuration
+├── Dockerfile                       # Multi-stage Docker build configuration
 ├── komga-webui/
 │   ├── src/
 │   │   ├── functions/
@@ -43,6 +45,368 @@ komga/
 
 ## Source Code Files Analysis
 
+### File: build.gradle.kts
+This is the main Gradle build configuration file that defines the project structure, dependencies, and build processes. It includes configuration for multi-stage Docker builds and dependency management.
+
+
+```text
+import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
+import org.jreleaser.model.Active
+import org.jreleaser.model.Distribution.DistributionType.SINGLE_JAR
+import org.jreleaser.model.api.common.Apply
+import kotlin.io.path.Path
+import kotlin.io.path.exists
+
+plugins {
+  run {
+    val kotlinVersion = "2.2.0"
+    kotlin("jvm") version kotlinVersion
+    kotlin("plugin.spring") version kotlinVersion
+    kotlin("kapt") version kotlinVersion
+  }
+  id("org.jlleitschuh.gradle.ktlint") version "13.0.0"
+  id("com.github.ben-manes.versions") version "0.52.0"
+  id("org.jreleaser") version "1.19.0"
+}
+
+fun isNonStable(version: String): Boolean {
+  val stableKeyword = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
+  val unstableKeyword = listOf("ALPHA", "RC").any { version.uppercase().contains(it) }
+  val regex = "^[0-9,.v-]+(-r)?$".toRegex()
+  val isStable = stableKeyword || regex.matches(version)
+  return unstableKeyword || !isStable
+}
+
+group = "org.gotson"
+
+allprojects {
+  repositories {
+    mavenCentral()
+  }
+  apply(plugin = "org.jlleitschuh.gradle.ktlint")
+  apply(plugin = "com.github.ben-manes.versions")
+
+  tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
+    // disallow release candidates as upgradable versions from stable versions
+    rejectVersionIf {
+      isNonStable(candidate.version) && !isNonStable(currentVersion)
+    }
+    gradleReleaseChannel = "current"
+    checkConstraints = true
+  }
+
+  configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
+    version = "1.7.1"
+    filter {
+      exclude("**/generated-src/**")
+      exclude("**/generated/**")
+    }
+  }
+}
+
+tasks.wrapper {
+  gradleVersion = "8.14.3"
+  distributionType = Wrapper.DistributionType.ALL
+}
+
+jreleaser {
+  project {
+    description = "Media server for comics/mangas/BDs with API and OPDS support"
+    copyright = "Gauthier Roebroeck"
+    authors.add("Gauthier Roebroeck")
+    license = "MIT"
+    links {
+      homepage = "https://komga.org"
+    }
+  }
+
+  release {
+    github {
+      discussionCategoryName = "Announcements"
+      skipTag = true
+      tagName = "{{projectVersion}}"
+
+      changelog {
+        formatted = Active.ALWAYS
+        preset = "conventional-commits"
+        skipMergeCommits = true
+        links = true
+        content = (if (Path("./release_notes/release_notes.md").exists()) "{{#f_file_read}}{{basedir}}/release_notes/release_notes.md{{/f_file_read}}" else "") +
+          """
+          ## Changelog
+
+          {{changelogChanges}}
+          {{changelogContributors}}
+          """.trimIndent()
+        format = "- {{#commitIsConventional}}{{#conventionalCommitIsBreakingChange}}🚨 {{/conventionalCommitIsBreakingChange}}{{#conventionalCommitScope}}**{{conventionalCommitScope}}**: {{/conventionalCommitScope}}{{conventionalCommitDescription}}{{#conventionalCommitBreakingChangeContent}}: *{{conventionalCommitBreakingChangeContent}}*{{/conventionalCommitBreakingChangeContent}} ({{commitShortHash}}){{/commitIsConventional}}{{^commitIsConventional}}{{commitTitle}} ({{commitShortHash}}){{/commitIsConventional}}{{#commitHasIssues}}, closes{{#commitIssues}} {{issue}}{{/commitIssues}}{{/commitHasIssues}}"
+        hide {
+          uncategorized = true
+          contributors = listOf("Weblate", "GitHub", "semantic-release-bot", "[bot]", "github-actions")
+        }
+        excludeLabels.add("chore")
+        category {
+          title = "🏎 Perf"
+          key = "perf"
+          labels.add("perf")
+          order = 25
+        }
+        category {
+          title = "🌐 Translation"
+          key = "i18n"
+          labels.add("i18n")
+          order = 70
+        }
+        category {
+          title = "⚙️ Dependencies"
+          key = "dependencies"
+          labels.add("dependencies")
+          order = 80
+        }
+        labeler {
+          label = "perf"
+          title = "regex:^(?:perf(?:\\(.*\\))?!?):\\s.*"
+          order = 120
+        }
+        labeler {
+          label = "i18n"
+          title = "regex:^(?:i18n(?:\\(.*\\))?!?):\\s.*"
+          order = 130
+        }
+        labeler {
+          label = "dependencies"
+          title = "regex:^(?:deps(?:\\(.*\\))?!?):\\s.*"
+          order = 140
+        }
+        extraProperties.put("categorizeScopes", true)
+        append {
+          enabled = true
+          title = "# [{{projectVersion}}]({{repoUrl}}/compare/{{previousTagName}}...{{tagName}}) ({{#f_now}}YYYY-MM-dd{{/f_now}})"
+          target = rootDir.resolve("CHANGELOG.md")
+          content =
+            """
+            {{changelogTitle}}
+            {{changelogChanges}}
+            """.trimIndent()
+        }
+      }
+
+      issues {
+        enabled = true
+        comment = "🎉 This issue has been resolved in `{{tagName}}` ([Release Notes]({{releaseNotesUrl}}))"
+        applyMilestone = Apply.ALWAYS
+        label {
+          name = "released"
+          description = "Issue has been released"
+          color = "#ededed"
+        }
+      }
+    }
+  }
+
+  distributions {
+    create("komga") {
+      active = Active.RELEASE
+      distributionType = SINGLE_JAR
+      artifact {
+        path = rootDir.resolve("komga/build/libs/komga-{{projectVersion}}.jar")
+      }
+    }
+  }
+
+  packagers {
+    docker {
+      active = Active.RELEASE
+      continueOnError = true
+      templateDirectory = rootDir.resolve("komga/docker")
+      repository.active = Active.NEVER
+      buildArgs = listOf("--cache-from", "gotson/komga:latest")
+      imageNames =
+        listOf(
+          "komga:latest",
+          "komga:{{projectVersion}}",
+          "komga:{{projectVersionMajor}}.x",
+        )
+      registries {
+        create("docker.io") { externalLogin = true }
+        create("ghcr.io") { externalLogin = true }
+      }
+      buildx {
+        enabled = true
+        createBuilder = false
+        platforms =
+          listOf(
+            "linux/amd64",
+            "linux/arm/v7",
+            "linux/arm64/v8",
+          )
+      }
+    }
+  }
+}
+
+```
+### File: Dockerfile
+Multi-stage Docker build configuration that builds the frontend (Vue.js) and backend (Kotlin/Spring Boot) separately, then combines them into a final production image. This is critical for understanding how the application is deployed and how the frontend static resources are served.
+
+
+```text
+# Stage 1: Build the frontend
+FROM node:18 AS frontend-build
+WORKDIR /app/komga-webui
+
+ENV NODE_OPTIONS="--max-old-space-size=16384"
+
+# Copy package files first for better caching
+COPY komga-webui/package*.json ./
+RUN npm install
+# Copy source code after dependencies
+COPY komga-webui/ .
+RUN npm run build
+
+# Stage 2: Build the backend
+FROM gradle:8.14.3-jdk24 AS backend-build
+WORKDIR /app
+# Set up Gradle cache directory
+ENV GRADLE_USER_HOME=/home/gradle/.gradle
+# Copy gradle files first for better caching
+COPY gradle/ ./gradle/
+COPY gradle/wrapper/gradle-wrapper.jar ./gradle/wrapper/
+COPY gradlew ./
+COPY gradle.properties ./
+COPY build.gradle.kts ./
+COPY settings.gradle ./
+# Use the Gradle installed in the container directly to skip wrapper download
+RUN gradle dependencies --no-daemon
+# Copy source code after dependencies
+# Copy only the files needed for backend build, excluding komga_custom
+COPY komga/ ./komga/
+# Copy built frontend from previous stage
+COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/public
+RUN gradle clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
+
+# Stage 3: Extract layers
+FROM eclipse-temurin:24-jre AS builder
+WORKDIR /builder
+COPY --from=backend-build /app/komga/build/libs/komga-*.jar application.jar
+RUN java -Djarmode=tools -jar application.jar extract --layers --destination extracted
+
+# Stage 4: Architecture-specific runtime setup
+# amd64 runtime
+FROM ubuntu:25.04 AS runtime-amd64
+ENV JAVA_HOME=/opt/java/openjdk
+COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+RUN apt-get update && \
+    apt-get install -y \
+        ca-certificates \
+        locales \
+        libjxl-dev \
+        libheif-dev \
+        libwebp-dev \
+        libarchive-dev \
+        wget \
+        curl \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-pil \
+        python3-psutil \
+        python3-slugify \
+        p7zip-full \
+        sshpass \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libopencv-dev \
+        libgtk-3-dev \
+        libglib2.0-0 \
+        libmupdf-dev \
+        unrar \
+        libopenblas-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen en_US.UTF-8 && \
+    wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-64bit" -O /usr/bin/kepubify && \
+    chmod +x /usr/bin/kepubify && \
+    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/x86_64-linux-gnu"
+
+# arm64 runtime
+FROM ubuntu:25.04 AS runtime-arm64
+ENV JAVA_HOME=/opt/java/openjdk
+COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+RUN apt-get update && \
+    apt-get install -y \
+        ca-certificates \
+        locales \
+        libjxl-dev \
+        libheif-dev \
+        libwebp-dev \
+        libarchive-dev \
+        wget \
+        curl \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python3-pil \
+        python3-psutil \
+        python3-slugify \
+        p7zip-full \
+        sshpass \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        libopencv-dev \
+        libgtk-3-dev \
+        libglib2.0-0 \
+        libmupdf-dev \
+        unrar \
+        libopenblas-dev \
+        libjpeg-dev \
+        libpng-dev \
+        libtiff-dev && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen en_US.UTF-8 && \
+    wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-arm64" -O /usr/bin/kepubify && \
+    chmod +x /usr/bin/kepubify && \
+    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/aarch64-linux-gnu"
+
+# Use TARGETARCH to select appropriate runtime
+FROM runtime-${TARGETARCH} AS final
+
+# Configure volumes
+VOLUME /tmp
+VOLUME /config
+WORKDIR /app
+
+# Copy extracted layers and application jar from builder
+COPY --from=builder /builder/extracted/dependencies/ ./
+COPY --from=builder /builder/extracted/spring-boot-loader/ ./
+COPY --from=builder /builder/extracted/snapshot-dependencies/ ./
+COPY --from=builder /builder/extracted/application/ ./
+COPY --from=builder /builder/application.jar ./
+
+# Install Python dependencies
+COPY requirements.txt ./
+RUN if [ -f requirements.txt ]; then \
+        pip3 install --no-cache-dir --break-system-packages -r requirements.txt; \
+    fi
+
+# Copy custom Python scripts
+COPY komga_custom/ /app/komga_custom/
+RUN chmod +x /app/komga_custom/*.py
+
+# Environment configuration
+ENV KOMGA_CONFIGDIR="/config"
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+
+EXPOSE 25600
+ENTRYPOINT ["java", "-Dspring.profiles.include=docker", "--enable-native-access=ALL-UNNAMED", "-jar", "application.jar", "--spring.config.additional-location=file:/config/"]
+LABEL org.opencontainers.image.source="https://github.com/gotson/komga"
+
+```
 ### File: komga-webui/src/functions/urls.ts
 This file contains the URL configuration logic that determines the base path for the Vue.js router. The current implementation uses `window.resourceBaseUrl` which may not be properly set in the Docker environment.
 
