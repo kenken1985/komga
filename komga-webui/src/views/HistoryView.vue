@@ -73,7 +73,12 @@
             <tbody>
             <tr v-for="[key, value] in Object.entries(dialogDetailsItem.properties)" :key="key">
               <td class="text-capitalize font-weight-bold">{{ formatPropertyKey(key) }}</td>
-              <td>{{ value }}</td>
+              <td v-if="key === 'processing_time_seconds'">
+                {{ formatProcessingTime(parseInt(value)) }}
+              </td>
+              <td v-else>
+                {{ value }}
+              </td>
             </tr>
             <tr v-if="getPageHash(dialogDetailsItem)">
               <td class="font-weight-bold">Page</td>
@@ -201,6 +206,34 @@ export default Vue.extend({
         .split('_')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ')
+    },
+    formatProcessingTime(seconds: number): string {
+      if (seconds === 0) return ''
+      
+      if (seconds < 60) {
+        return `${seconds} second${seconds !== 1 ? 's' : ''}`
+      } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60)
+        const remainingSeconds = seconds % 60
+        if (remainingSeconds === 0) {
+          return `${minutes} minute${minutes !== 1 ? 's' : ''}`
+        } else {
+          return `${minutes} minute${minutes !== 1 ? 's' : ''} ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`
+        }
+      } else {
+        const hours = Math.floor(seconds / 3600)
+        const remainingSeconds = seconds % 3600
+        if (remainingSeconds === 0) {
+          return `${hours} hour${hours !== 1 ? 's' : ''}`
+        } else {
+          const minutes = Math.floor(remainingSeconds / 60)
+          if (minutes === 0) {
+            return `${hours} hour${hours !== 1 ? 's' : ''} ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}`
+          } else {
+            return `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} minute${minutes !== 1 ? 's' : ''}`
+          }
+        }
+      }
     },
     async loadData() {
       this.loading = true

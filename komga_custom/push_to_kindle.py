@@ -6,6 +6,7 @@ import subprocess
 import io
 import urllib.parse
 import shlex
+import time
 from PIL import Image
 from typing import List
 from pathlib import Path
@@ -436,6 +437,9 @@ def main():
     print("SCRIPT_STATUS:STARTING")
     file_paths = get_files_list_from_webui()
     print(f"Processing files: {file_paths}")
+    
+    # Start timing
+    start_time = time.time()
 
     # Determine target folder based on number of files
     target_folder = "New"
@@ -509,6 +513,13 @@ def main():
                 print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
 
         print(f"--- Finished processing file: {file_path} ---")
+
+    # Calculate processing time
+    end_time = time.time()
+    processing_time = int(end_time - start_time)
+    
+    # Output processing time in structured format
+    print(f"HISTORICAL_EVENT_PROCESSING_TIME:{processing_time}")
 
     if all_success:
         print("SCRIPT_STATUS:SUCCESS")

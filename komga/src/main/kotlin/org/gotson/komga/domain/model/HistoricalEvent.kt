@@ -109,6 +109,7 @@ sealed class HistoricalEvent(
     book: Book,
     series: Series,
     kindlePath: String,
+    processingTimeSeconds: Long = 0,
   ) : HistoricalEvent(
     type = "BookPushedToKindleSuccess",
     bookId = book.id,
@@ -118,6 +119,7 @@ sealed class HistoricalEvent(
         "name" to book.path.toString(),
         "series" to series.name,
         "kindle_path" to kindlePath,
+        "processing_time_seconds" to processingTimeSeconds.toString(),
       ),
   )
 

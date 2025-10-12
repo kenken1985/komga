@@ -919,19 +919,20 @@ class SeriesController(
       val exitCode = process.waitFor()
       
       if (exitCode == 0) {
-        // Parse Kindle path from output
+        // Parse Kindle path and processing time from output
         val kindlePath = extractKindlePathFromOutput(output)
+        val processingTime = extractProcessingTimeFromOutput(output)
         if (kindlePath != null) {
           // Create success events for each book in the series
           books.forEach { book ->
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath))
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath, processingTime))
           }
-          logger.info { "[push_to_kindle] Successfully created success events for series: $seriesId, Kindle path: $kindlePath, books: ${books.size}" }
+          logger.info { "[push_to_kindle] Successfully created success events for series: $seriesId, Kindle path: $kindlePath, Processing time: ${processingTime}s, books: ${books.size}" }
         } else {
           logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for series: $seriesId" }
           // Create success events even without kindle path
           books.forEach { book ->
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, ""))
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, "", processingTime))
           }
         }
       } else {
@@ -995,5 +996,23 @@ class SeriesController(
       }
     }
     return null
+  }
+
+  private fun extractProcessingTimeFromOutput(output: String): Long {
+    // Extract processing time from the output
+    // Look for structured output pattern: HISTORICAL_EVENT_PROCESSING_TIME:seconds
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("HISTORICAL_EVENT_PROCESSING_TIME:")) {
+        val timeStr = line.substringAfter("HISTORICAL_EVENT_PROCESSING_TIME:").trim()
+        return try {
+          timeStr.toLong()
+        } catch (e: NumberFormatException) {
+          logger.warn { "[push_to_kindle] Invalid processing time format: $timeStr" }
+          0L
+        }
+      }
+    }
+    return 0L // Default to 0 if not found
   }
 }

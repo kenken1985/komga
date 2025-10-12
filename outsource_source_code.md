@@ -1,893 +1,1859 @@
-# Komga Frontend Routing Bug Analysis and Fix
+# Outsource Document: Add Processing Time to Kindle Push History
 
-## Goal
-Fix the "No mapping for GET" errors when accessing Komga URLs directly via IP address (e.g., `<ip>/book/0KD1JKYHXH0XG/read`). The issue occurs in a Docker environment without reverse proxy where users access Komga directly via IP:PORT.
+## 1. Goal
 
-### Error Log
-```
-komga-kindle-1  | 2025-10-12T06:51:46.533-04:00  WARN 1 --- [io-25600-exec-3] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/read
-komga-kindle-1  | 2025-10-12T06:51:46.615-04:00  WARN 1 --- [io-25600-exec-1] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/js/chunk-vendors.3366e51a.js
-komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-6] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/css/app.c113e1ad.css
-komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-7] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/js/app.c8577053.js
-komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-4] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/css/chunk-vendors.420551a9.css
-```
+Add processing time reporting to the "Book pushed to Kindle successfully" message in the webUI History section. The processing time should be displayed in the history details dialog when users click the information button for a successful Kindle push event.
 
-## Root Cause Analysis
-The issue stems from a mismatch between the Vue.js router base path configuration and how users access the application in a Docker environment. When users access Komga via `<ip>:<port>/`, the Vue.js router expects all routes to be relative to this base path, but the application is not properly configured to handle this scenario.
+## 2. Complete Folder Structure
 
-### Problem Details
-1. **Vue Router Configuration**: The router uses `mode: 'history'` with a dynamic base path determined by `urls.base`
-2. **URL Base Configuration**: The base path is set differently for development (`'/'`) and production (`'./'`)
-3. **Access Pattern**: Users access via `<ip>:<port>/` but the router expects routes to be relative to this path
-4. **Resource Loading**: JavaScript and CSS files are being requested with incorrect paths, causing 404 errors
-
-## Complete Folder Structure
 ```
 komga/
-├── build.gradle.kts                 # Gradle build configuration
-├── Dockerfile                       # Multi-stage Docker build configuration
-├── komga-webui/
-│   ├── src/
-│   │   ├── functions/
-│   │   │   └── urls.ts              # URL configuration and base path logic
-│   │   ├── main.ts                  # Vue.js application entry point
-│   │   ├── router.ts                # Vue.js router configuration
-│   │   ├── views/
-│   │   │   ├── PageNotFound.vue     # 404 page component
-│   │   │   ├── DivinaReader.vue     # Book reader component (for /book/:bookId/read)
-│   │   │   └── EpubReader.vue       # EPUB reader component (for /book/:bookId/read-epub)
-│   │   └── public-path.js           # Webpack public path configuration
-│   └── vue.config.js                # Vue CLI configuration
-└── komga/src/main/kotlin/org/gotson/komga/
-    └── infrastructure/web/
-        └── WebMvcConfiguration.kt    # Spring Boot resource handling configuration
+├── komga/src/main/kotlin/org/gotson/komga/domain/model/HistoricalEvent.kt
+├── komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/BookController.kt
+└── komga_custom/
+    └── push_to_kindle.py
+
+komga-webui/
+└── src/views/HistoryView.vue
 ```
 
-## Source Code Files Analysis
+## 3. Source Code (per file)
 
-### File: build.gradle.kts
-This is the main Gradle build configuration file that defines the project structure, dependencies, and build processes. It includes configuration for multi-stage Docker builds and dependency management.
+### File: komga/src/main/kotlin/org/gotson/komga/domain/model/HistoricalEvent.kt
+
+The `BookPushedToKindleSuccess` class needs to be updated to include processing time in its properties.
 
 
-```text
-import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
-import org.jreleaser.model.Active
-import org.jreleaser.model.Distribution.DistributionType.SINGLE_JAR
-import org.jreleaser.model.api.common.Apply
-import kotlin.io.path.Path
-import kotlin.io.path.exists
+```kotlin
+package org.gotson.komga.domain.model
 
-plugins {
-  run {
-    val kotlinVersion = "2.2.0"
-    kotlin("jvm") version kotlinVersion
-    kotlin("plugin.spring") version kotlinVersion
-    kotlin("kapt") version kotlinVersion
+import com.github.f4b6a3.tsid.TsidCreator
+import java.nio.file.Path
+import java.time.LocalDateTime
+
+sealed class HistoricalEvent(
+  val type: String,
+  val bookId: String? = null,
+  val seriesId: String? = null,
+  val properties: Map<String, String> = emptyMap(),
+  val timestamp: LocalDateTime = LocalDateTime.now(),
+  val id: String = TsidCreator.getTsid256().toString(),
+) {
+  class BookFileDeleted(
+    book: Book,
+    reason: String,
+  ) : HistoricalEvent(
+      type = "BookFileDeleted",
+      bookId = book.id,
+      seriesId = book.seriesId,
+      properties =
+        mapOf(
+          "reason" to reason,
+          "name" to book.path.toString(),
+        ),
+    )
+
+  class SeriesFolderDeleted(
+    seriesId: String,
+    seriesPath: Path,
+    reason: String,
+  ) : HistoricalEvent(
+      type = "SeriesFolderDeleted",
+      seriesId = seriesId,
+      properties =
+        mapOf(
+          "reason" to reason,
+          "name" to seriesPath.toString(),
+        ),
+    ) {
+    constructor(series: Series, reason: String) : this(series.id, series.path, reason)
   }
-  id("org.jlleitschuh.gradle.ktlint") version "13.0.0"
-  id("com.github.ben-manes.versions") version "0.52.0"
-  id("org.jreleaser") version "1.19.0"
+
+  class BookConverted(
+    book: Book,
+    previous: Book,
+  ) : HistoricalEvent(
+      type = "BookConverted",
+      bookId = book.id,
+      seriesId = book.seriesId,
+      properties =
+        mapOf(
+          "name" to book.path.toString(),
+          "former file" to previous.path.toString(),
+        ),
+    )
+
+  class BookImported(
+    book: Book,
+    series: Series,
+    source: Path,
+    upgrade: Boolean,
+  ) : HistoricalEvent(
+      type = "BookImported",
+      bookId = book.id,
+      seriesId = series.id,
+      properties =
+        mapOf(
+          "name" to book.path.toString(),
+          "source" to source.toString(),
+          "upgrade" to if (upgrade) "Yes" else "No",
+        ),
+    )
+
+  class DuplicatePageDeleted(
+    book: Book,
+    page: BookPageNumbered,
+  ) : HistoricalEvent(
+      type = "DuplicatePageDeleted",
+      bookId = book.id,
+      seriesId = book.seriesId,
+      properties =
+        mapOf(
+          "name" to book.path.toString(),
+          "page number" to page.pageNumber.toString(),
+          "page file name" to page.fileName,
+          "page file hash" to page.fileHash,
+          "page file size" to page.fileSize.toString(),
+          "page media type" to page.mediaType,
+        ),
+    )
+
+  class BookPushedToKindleInitialized(
+    book: Book,
+    series: Series,
+  ) : HistoricalEvent(
+    type = "BookPushedToKindleInitialized",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+      ),
+  )
+
+  class BookPushedToKindleSuccess(
+    book: Book,
+    series: Series,
+    kindlePath: String,
+  ) : HistoricalEvent(
+    type = "BookPushedToKindleSuccess",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+        "kindle_path" to kindlePath,
+      ),
+  )
+
+  class BookPushedToKindleFailed(
+    book: Book,
+    series: Series,
+    error: String,
+  ) : HistoricalEvent(
+    type = "BookPushedToKindleFailed",
+    bookId = book.id,
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to book.path.toString(),
+        "series" to series.name,
+        "error" to error,
+      ),
+  )
 }
 
-fun isNonStable(version: String): Boolean {
-  val stableKeyword = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
-  val unstableKeyword = listOf("ALPHA", "RC").any { version.uppercase().contains(it) }
-  val regex = "^[0-9,.v-]+(-r)?$".toRegex()
-  val isStable = stableKeyword || regex.matches(version)
-  return unstableKeyword || !isStable
-}
+```
+### File: komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/BookController.kt
 
-group = "org.gotson"
+The `pushToKindle` method needs to be updated to:
+1. Capture processing time from the Python script output
+2. Include processing time in the `BookPushedToKindleSuccess` historical event
 
-allprojects {
-  repositories {
-    mavenCentral()
-  }
-  apply(plugin = "org.jlleitschuh.gradle.ktlint")
-  apply(plugin = "com.github.ben-manes.versions")
 
-  tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
-    // disallow release candidates as upgradable versions from stable versions
-    rejectVersionIf {
-      isNonStable(candidate.version) && !isNonStable(currentVersion)
-    }
-    gradleReleaseChannel = "current"
-    checkConstraints = true
-  }
+```kotlin
+package org.gotson.komga.interfaces.api.rest
 
-  configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
-    version = "1.7.1"
-    filter {
-      exclude("**/generated-src/**")
-      exclude("**/generated/**")
-    }
-  }
-}
+import io.github.oshai.kotlinlogging.KotlinLogging
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.validation.Valid
+import org.gotson.komga.application.tasks.HIGHEST_PRIORITY
+import org.gotson.komga.application.tasks.HIGH_PRIORITY
+import org.gotson.komga.application.tasks.LOWEST_PRIORITY
+import org.gotson.komga.application.tasks.TaskEmitter
+import org.gotson.komga.domain.model.BookSearch
+import org.gotson.komga.domain.model.Dimension
+import org.gotson.komga.domain.model.DomainEvent
+import org.gotson.komga.domain.model.HistoricalEvent
+import org.gotson.komga.domain.model.ImageConversionException
+import org.gotson.komga.domain.model.MarkSelectedPreference
+import org.gotson.komga.domain.model.Media
+import org.gotson.komga.domain.model.MediaExtensionEpub
+import org.gotson.komga.domain.model.MediaNotReadyException
+import org.gotson.komga.domain.model.MediaProfile
+import org.gotson.komga.domain.model.ReadStatus
+import org.gotson.komga.domain.model.SearchCondition
+import org.gotson.komga.domain.model.SearchContext
+import org.gotson.komga.domain.model.SearchOperator
+import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.persistence.BookMetadataRepository
+import org.gotson.komga.domain.persistence.BookRepository
+import org.gotson.komga.domain.persistence.HistoricalEventRepository
+import org.gotson.komga.domain.persistence.MediaRepository
+import org.gotson.komga.domain.persistence.ReadListRepository
+import org.gotson.komga.domain.persistence.SeriesRepository
+import org.gotson.komga.domain.persistence.ThumbnailBookRepository
+import org.gotson.komga.domain.service.BookAnalyzer
+import org.gotson.komga.domain.service.BookLifecycle
+import org.gotson.komga.infrastructure.image.ImageAnalyzer
+import org.gotson.komga.infrastructure.jooq.UnpagedSorted
+import org.gotson.komga.infrastructure.mediacontainer.ContentDetector
+import org.gotson.komga.infrastructure.openapi.OpenApiConfiguration
+import org.gotson.komga.infrastructure.openapi.PageableAsQueryParam
+import org.gotson.komga.infrastructure.openapi.PageableWithoutSortAsQueryParam
+import org.gotson.komga.infrastructure.security.KomgaPrincipal
+import org.gotson.komga.infrastructure.web.getMediaTypeOrDefault
+import org.gotson.komga.interfaces.api.CommonBookController
+import org.gotson.komga.interfaces.api.ContentRestrictionChecker
+import org.gotson.komga.interfaces.api.WebPubGenerator
+import org.gotson.komga.interfaces.api.dto.MEDIATYPE_DIVINA_JSON_VALUE
+import org.gotson.komga.interfaces.api.dto.MEDIATYPE_POSITION_LIST_JSON
+import org.gotson.komga.interfaces.api.dto.MEDIATYPE_POSITION_LIST_JSON_VALUE
+import org.gotson.komga.interfaces.api.dto.MEDIATYPE_WEBPUB_JSON_VALUE
+import org.gotson.komga.interfaces.api.dto.WPPublicationDto
+import org.gotson.komga.interfaces.api.getBookLastModified
+import org.gotson.komga.interfaces.api.persistence.BookDtoRepository
+import org.gotson.komga.interfaces.api.rest.dto.BookDto
+import org.gotson.komga.interfaces.api.rest.dto.BookImportBatchDto
+import org.gotson.komga.interfaces.api.rest.dto.BookMetadataUpdateDto
+import org.gotson.komga.interfaces.api.rest.dto.PageDto
+import org.gotson.komga.interfaces.api.rest.dto.R2Positions
+import org.gotson.komga.interfaces.api.rest.dto.ReadListDto
+import org.gotson.komga.interfaces.api.rest.dto.ReadProgressUpdateDto
+import org.gotson.komga.interfaces.api.rest.dto.ThumbnailBookDto
+import org.gotson.komga.interfaces.api.rest.dto.patch
+import org.gotson.komga.interfaces.api.rest.dto.restrictUrl
+import org.gotson.komga.interfaces.api.rest.dto.toDto
+import org.gotson.komga.interfaces.api.setNotModified
+import org.springframework.context.ApplicationEventPublisher
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
+import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseStatus
+import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.context.request.ServletWebRequest
+import org.springframework.web.context.request.WebRequest
+import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.server.ResponseStatusException
+import java.lang.ProcessBuilder
+import java.nio.file.NoSuchFileException
+import java.time.LocalDate
+import java.time.ZoneOffset
 
-tasks.wrapper {
-  gradleVersion = "8.14.3"
-  distributionType = Wrapper.DistributionType.ALL
-}
+private val logger = KotlinLogging.logger {}
 
-jreleaser {
-  project {
-    description = "Media server for comics/mangas/BDs with API and OPDS support"
-    copyright = "Gauthier Roebroeck"
-    authors.add("Gauthier Roebroeck")
-    license = "MIT"
-    links {
-      homepage = "https://komga.org"
-    }
-  }
-
-  release {
-    github {
-      discussionCategoryName = "Announcements"
-      skipTag = true
-      tagName = "{{projectVersion}}"
-
-      changelog {
-        formatted = Active.ALWAYS
-        preset = "conventional-commits"
-        skipMergeCommits = true
-        links = true
-        content = (if (Path("./release_notes/release_notes.md").exists()) "{{#f_file_read}}{{basedir}}/release_notes/release_notes.md{{/f_file_read}}" else "") +
-          """
-          ## Changelog
-
-          {{changelogChanges}}
-          {{changelogContributors}}
-          """.trimIndent()
-        format = "- {{#commitIsConventional}}{{#conventionalCommitIsBreakingChange}}🚨 {{/conventionalCommitIsBreakingChange}}{{#conventionalCommitScope}}**{{conventionalCommitScope}}**: {{/conventionalCommitScope}}{{conventionalCommitDescription}}{{#conventionalCommitBreakingChangeContent}}: *{{conventionalCommitBreakingChangeContent}}*{{/conventionalCommitBreakingChangeContent}} ({{commitShortHash}}){{/commitIsConventional}}{{^commitIsConventional}}{{commitTitle}} ({{commitShortHash}}){{/commitIsConventional}}{{#commitHasIssues}}, closes{{#commitIssues}} {{issue}}{{/commitIssues}}{{/commitHasIssues}}"
-        hide {
-          uncategorized = true
-          contributors = listOf("Weblate", "GitHub", "semantic-release-bot", "[bot]", "github-actions")
-        }
-        excludeLabels.add("chore")
-        category {
-          title = "🏎 Perf"
-          key = "perf"
-          labels.add("perf")
-          order = 25
-        }
-        category {
-          title = "🌐 Translation"
-          key = "i18n"
-          labels.add("i18n")
-          order = 70
-        }
-        category {
-          title = "⚙️ Dependencies"
-          key = "dependencies"
-          labels.add("dependencies")
-          order = 80
-        }
-        labeler {
-          label = "perf"
-          title = "regex:^(?:perf(?:\\(.*\\))?!?):\\s.*"
-          order = 120
-        }
-        labeler {
-          label = "i18n"
-          title = "regex:^(?:i18n(?:\\(.*\\))?!?):\\s.*"
-          order = 130
-        }
-        labeler {
-          label = "dependencies"
-          title = "regex:^(?:deps(?:\\(.*\\))?!?):\\s.*"
-          order = 140
-        }
-        extraProperties.put("categorizeScopes", true)
-        append {
-          enabled = true
-          title = "# [{{projectVersion}}]({{repoUrl}}/compare/{{previousTagName}}...{{tagName}}) ({{#f_now}}YYYY-MM-dd{{/f_now}})"
-          target = rootDir.resolve("CHANGELOG.md")
-          content =
-            """
-            {{changelogTitle}}
-            {{changelogChanges}}
-            """.trimIndent()
-        }
+@RestController
+@RequestMapping(produces = [MediaType.APPLICATION_JSON_VALUE])
+class BookController(
+  private val taskEmitter: TaskEmitter,
+  private val bookAnalyzer: BookAnalyzer,
+  private val bookLifecycle: BookLifecycle,
+  private val bookRepository: BookRepository,
+  private val bookMetadataRepository: BookMetadataRepository,
+  private val historicalEventRepository: HistoricalEventRepository,
+  private val mediaRepository: MediaRepository,
+  private val bookDtoRepository: BookDtoRepository,
+  private val readListRepository: ReadListRepository,
+  private val seriesRepository: SeriesRepository,
+  private val contentDetector: ContentDetector,
+  private val imageAnalyzer: ImageAnalyzer,
+  private val eventPublisher: ApplicationEventPublisher,
+  private val thumbnailBookRepository: ThumbnailBookRepository,
+  private val webPubGenerator: WebPubGenerator,
+  private val contentRestrictionChecker: ContentRestrictionChecker,
+  private val commonBookController: CommonBookController,
+) {
+  @Deprecated("use /v1/books/list instead")
+  @PageableAsQueryParam
+  @GetMapping("api/v1/books")
+  @Operation(summary = "List books", description = "Use POST /api/v1/books/list instead. Deprecated since 1.19.0.", tags = [OpenApiConfiguration.TagNames.BOOKS, OpenApiConfiguration.TagNames.DEPRECATED])
+  fun getAllBooksDeprecated(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @RequestParam(name = "search", required = false) searchTerm: String? = null,
+    @RequestParam(name = "library_id", required = false) libraryIds: List<String>? = null,
+    @RequestParam(name = "media_status", required = false) mediaStatus: List<Media.Status>? = null,
+    @RequestParam(name = "read_status", required = false) readStatus: List<ReadStatus>? = null,
+    @RequestParam(name = "released_after", required = false)
+    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+    releasedAfter: LocalDate? = null,
+    @RequestParam(name = "tag", required = false) tags: List<String>? = null,
+    @RequestParam(name = "unpaged", required = false) unpaged: Boolean = false,
+    @Parameter(hidden = true) page: Pageable,
+  ): Page<BookDto> {
+    val sort =
+      when {
+        page.sort.isSorted -> page.sort
+        !searchTerm.isNullOrBlank() -> Sort.by("relevance")
+        else -> Sort.unsorted()
       }
 
-      issues {
-        enabled = true
-        comment = "🎉 This issue has been resolved in `{{tagName}}` ([Release Notes]({{releaseNotesUrl}}))"
-        applyMilestone = Apply.ALWAYS
-        label {
-          name = "released"
-          description = "Issue has been released"
-          color = "#ededed"
-        }
-      }
-    }
-  }
-
-  distributions {
-    create("komga") {
-      active = Active.RELEASE
-      distributionType = SINGLE_JAR
-      artifact {
-        path = rootDir.resolve("komga/build/libs/komga-{{projectVersion}}.jar")
-      }
-    }
-  }
-
-  packagers {
-    docker {
-      active = Active.RELEASE
-      continueOnError = true
-      templateDirectory = rootDir.resolve("komga/docker")
-      repository.active = Active.NEVER
-      buildArgs = listOf("--cache-from", "gotson/komga:latest")
-      imageNames =
-        listOf(
-          "komga:latest",
-          "komga:{{projectVersion}}",
-          "komga:{{projectVersionMajor}}.x",
+    val pageRequest =
+      if (unpaged)
+        UnpagedSorted(sort)
+      else
+        PageRequest.of(
+          page.pageNumber,
+          page.pageSize,
+          sort,
         )
-      registries {
-        create("docker.io") { externalLogin = true }
-        create("ghcr.io") { externalLogin = true }
+
+    val bookSearch =
+      BookSearch(
+        SearchCondition.AllOfBook(
+          buildList {
+            if (!libraryIds.isNullOrEmpty()) add(SearchCondition.AnyOfBook(libraryIds.map { SearchCondition.LibraryId(SearchOperator.Is(it)) }))
+            if (!mediaStatus.isNullOrEmpty()) add(SearchCondition.AnyOfBook(mediaStatus.map { SearchCondition.MediaStatus(SearchOperator.Is(it)) }))
+            if (!readStatus.isNullOrEmpty()) add(SearchCondition.AnyOfBook(readStatus.map { SearchCondition.ReadStatus(SearchOperator.Is(it)) }))
+            if (!tags.isNullOrEmpty()) add(SearchCondition.AnyOfBook(tags.map { SearchCondition.Tag(SearchOperator.Is(it)) }))
+            releasedAfter?.let { add(SearchCondition.ReleaseDate(SearchOperator.After(it.atStartOfDay(ZoneOffset.UTC)))) }
+          },
+        ),
+        searchTerm,
+      )
+
+    return bookDtoRepository
+      .findAll(bookSearch, SearchContext(principal.user), pageRequest)
+      .map { it.restrictUrl(!principal.user.isAdmin) }
+  }
+
+  @PageableAsQueryParam
+  @PostMapping("api/v1/books/list")
+  @Operation(summary = "List books", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  fun getBooks(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @RequestBody search: BookSearch,
+    @RequestParam(name = "unpaged", required = false) unpaged: Boolean = false,
+    @Parameter(hidden = true) page: Pageable,
+  ): Page<BookDto> {
+    val sort =
+      when {
+        page.sort.isSorted -> page.sort
+        !search.fullTextSearch.isNullOrBlank() -> Sort.by("relevance")
+        else -> Sort.unsorted()
       }
-      buildx {
-        enabled = true
-        createBuilder = false
-        platforms =
-          listOf(
-            "linux/amd64",
-            "linux/arm/v7",
-            "linux/arm64/v8",
-          )
+
+    val pageRequest =
+      if (unpaged)
+        UnpagedSorted(sort)
+      else
+        PageRequest.of(
+          page.pageNumber,
+          page.pageSize,
+          sort,
+        )
+
+    return bookDtoRepository
+      .findAll(search, SearchContext(principal.user), pageRequest)
+      .map { it.restrictUrl(!principal.user.isAdmin) }
+  }
+
+  @Operation(summary = "List latest books", description = "Return newly added or updated books.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PageableWithoutSortAsQueryParam
+  @GetMapping("api/v1/books/latest")
+  fun getBooksLatest(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @RequestParam(name = "unpaged", required = false) unpaged: Boolean = false,
+    @Parameter(hidden = true) page: Pageable,
+  ): Page<BookDto> {
+    val sort = Sort.by(Sort.Order.desc("lastModifiedDate"))
+
+    val pageRequest =
+      if (unpaged)
+        UnpagedSorted(sort)
+      else
+        PageRequest.of(
+          page.pageNumber,
+          page.pageSize,
+          sort,
+        )
+
+    return bookDtoRepository
+      .findAll(
+        SearchContext(principal.user),
+        pageRequest,
+      ).map { it.restrictUrl(!principal.user.isAdmin) }
+  }
+
+  @Operation(summary = "List books on deck", description = "Return first unread book of series with at least one book read and no books in progress.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PageableWithoutSortAsQueryParam
+  @GetMapping("api/v1/books/ondeck")
+  fun getBooksOnDeck(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @RequestParam(name = "library_id", required = false) libraryIds: List<String>? = null,
+    @Parameter(hidden = true) page: Pageable,
+  ): Page<BookDto> =
+    bookDtoRepository
+      .findAllOnDeck(
+        principal.user.id,
+        principal.user.getAuthorizedLibraryIds(libraryIds),
+        page,
+        principal.user.restrictions,
+      ).map { it.restrictUrl(!principal.user.isAdmin) }
+
+  @Operation(summary = "List duplicate books", description = "Return books that have the same file hash.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PageableAsQueryParam
+  @GetMapping("api/v1/books/duplicates")
+  @PreAuthorize("hasRole('ADMIN')")
+  fun getBooksDuplicates(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @RequestParam(name = "unpaged", required = false) unpaged: Boolean = false,
+    @Parameter(hidden = true) page: Pageable,
+  ): Page<BookDto> {
+    val sort =
+      when {
+        page.sort.isSorted -> page.sort
+        else -> Sort.by(Sort.Order.asc("fileHash"))
       }
-    }
+
+    val pageRequest =
+      if (unpaged)
+        Pageable.unpaged()
+      else
+        PageRequest.of(
+          page.pageNumber,
+          page.pageSize,
+          sort,
+        )
+
+    return bookDtoRepository.findAllDuplicates(principal.user.id, pageRequest)
   }
-}
 
-```
-### File: Dockerfile
-Multi-stage Docker build configuration that builds the frontend (Vue.js) and backend (Kotlin/Spring Boot) separately, then combines them into a final production image. This is critical for understanding how the application is deployed and how the frontend static resources are served.
+  @Operation(summary = "Get book details", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @GetMapping("api/v1/books/{bookId}")
+  fun getBookById(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): BookDto =
+    bookDtoRepository.findByIdOrNull(bookId, principal.user.id)?.let {
+      contentRestrictionChecker.checkContentRestriction(principal.user, it)
 
+      it.restrictUrl(!principal.user.isAdmin)
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
-```text
-# Stage 1: Build the frontend
-FROM node:18 AS frontend-build
-WORKDIR /app/komga-webui
+  @Operation(summary = "Get previous book in series", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @GetMapping("api/v1/books/{bookId}/previous")
+  fun getBookSiblingPrevious(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): BookDto {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
 
-ENV NODE_OPTIONS="--max-old-space-size=16384"
-
-# Copy package files first for better caching
-COPY komga-webui/package*.json ./
-RUN npm install
-# Copy source code after dependencies
-COPY komga-webui/ .
-RUN npm run build
-
-# Stage 2: Build the backend
-FROM gradle:8.14.3-jdk24 AS backend-build
-WORKDIR /app
-# Set up Gradle cache directory
-ENV GRADLE_USER_HOME=/home/gradle/.gradle
-# Copy gradle files first for better caching
-COPY gradle/ ./gradle/
-COPY gradle/wrapper/gradle-wrapper.jar ./gradle/wrapper/
-COPY gradlew ./
-COPY gradle.properties ./
-COPY build.gradle.kts ./
-COPY settings.gradle ./
-# Use the Gradle installed in the container directly to skip wrapper download
-RUN gradle dependencies --no-daemon
-# Copy source code after dependencies
-# Copy only the files needed for backend build, excluding komga_custom
-COPY komga/ ./komga/
-# Copy built frontend from previous stage
-COPY --from=frontend-build /app/komga-webui/dist ./komga/src/main/resources/public
-RUN gradle clean build -x test -x ktlintKotlinScriptCheck -x ktlintMainSourceSetCheck -x ktlintTestSourceSetCheck -x ktlintBenchmarkSourceSetCheck -PskipGitProperties=true
-
-# Stage 3: Extract layers
-FROM eclipse-temurin:24-jre AS builder
-WORKDIR /builder
-COPY --from=backend-build /app/komga/build/libs/komga-*.jar application.jar
-RUN java -Djarmode=tools -jar application.jar extract --layers --destination extracted
-
-# Stage 4: Architecture-specific runtime setup
-# amd64 runtime
-FROM ubuntu:25.04 AS runtime-amd64
-ENV JAVA_HOME=/opt/java/openjdk
-COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
-RUN apt-get update && \
-    apt-get install -y \
-        ca-certificates \
-        locales \
-        libjxl-dev \
-        libheif-dev \
-        libwebp-dev \
-        libarchive-dev \
-        wget \
-        curl \
-        python3 \
-        python3-pip \
-        python3-venv \
-        python3-pil \
-        python3-psutil \
-        python3-slugify \
-        p7zip-full \
-        sshpass \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        libopencv-dev \
-        libgtk-3-dev \
-        libglib2.0-0 \
-        libmupdf-dev \
-        unrar \
-        libopenblas-dev \
-        libjpeg-dev \
-        libpng-dev \
-        libtiff-dev && \
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
-    locale-gen en_US.UTF-8 && \
-    wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-64bit" -O /usr/bin/kepubify && \
-    chmod +x /usr/bin/kepubify && \
-    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/x86_64-linux-gnu"
-
-# arm64 runtime
-FROM ubuntu:25.04 AS runtime-arm64
-ENV JAVA_HOME=/opt/java/openjdk
-COPY --from=eclipse-temurin:24-jre $JAVA_HOME $JAVA_HOME
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
-RUN apt-get update && \
-    apt-get install -y \
-        ca-certificates \
-        locales \
-        libjxl-dev \
-        libheif-dev \
-        libwebp-dev \
-        libarchive-dev \
-        wget \
-        curl \
-        python3 \
-        python3-pip \
-        python3-venv \
-        python3-pil \
-        python3-psutil \
-        python3-slugify \
-        p7zip-full \
-        sshpass \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        libopencv-dev \
-        libgtk-3-dev \
-        libglib2.0-0 \
-        libmupdf-dev \
-        unrar \
-        libopenblas-dev \
-        libjpeg-dev \
-        libpng-dev \
-        libtiff-dev && \
-    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
-    locale-gen en_US.UTF-8 && \
-    wget "https://github.com/pgaskin/kepubify/releases/latest/download/kepubify-linux-arm64" -O /usr/bin/kepubify && \
-    chmod +x /usr/bin/kepubify && \
-    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/aarch64-linux-gnu"
-
-# Use TARGETARCH to select appropriate runtime
-FROM runtime-${TARGETARCH} AS final
-
-# Configure volumes
-VOLUME /tmp
-VOLUME /config
-WORKDIR /app
-
-# Copy extracted layers and application jar from builder
-COPY --from=builder /builder/extracted/dependencies/ ./
-COPY --from=builder /builder/extracted/spring-boot-loader/ ./
-COPY --from=builder /builder/extracted/snapshot-dependencies/ ./
-COPY --from=builder /builder/extracted/application/ ./
-COPY --from=builder /builder/application.jar ./
-
-# Install Python dependencies
-COPY requirements.txt ./
-RUN if [ -f requirements.txt ]; then \
-        pip3 install --no-cache-dir --break-system-packages -r requirements.txt; \
-    fi
-
-# Copy custom Python scripts
-COPY komga_custom/ /app/komga_custom/
-RUN chmod +x /app/komga_custom/*.py
-
-# Environment configuration
-ENV KOMGA_CONFIGDIR="/config"
-ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
-
-EXPOSE 25600
-ENTRYPOINT ["java", "-Dspring.profiles.include=docker", "--enable-native-access=ALL-UNNAMED", "-jar", "application.jar", "--spring.config.additional-location=file:/config/"]
-LABEL org.opencontainers.image.source="https://github.com/gotson/komga"
-
-```
-### File: komga-webui/src/functions/urls.ts
-This file contains the URL configuration logic that determines the base path for the Vue.js router. The current implementation uses `window.resourceBaseUrl` which may not be properly set in the Docker environment.
-
-
-```typescript
-import {PageHashKnownDto, PageHashUnknownDto} from '@/types/komga-pagehashes'
-
-const fullUrl = process.env.VUE_APP_KOMGA_API_URL
-  ? process.env.VUE_APP_KOMGA_API_URL
-  : window.location.origin + window.resourceBaseUrl
-const baseUrl = process.env.NODE_ENV === 'production' ? window.resourceBaseUrl : '/'
-
-const urls = {
-  origin: !fullUrl.endsWith('/') ? `${fullUrl}/` : fullUrl,
-  originNoSlash: fullUrl.endsWith('/') ? fullUrl.slice(0, -1) : fullUrl,
-  base: !baseUrl.endsWith('/') ? `${baseUrl}/` : baseUrl,
-  baseNoSlash: baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl,
-} as Urls
-
-export default urls
-
-export function bookThumbnailUrl(bookId: string): string {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/thumbnail`
-}
-
-export function bookThumbnailUrlByThumbnailId(bookId: string, thumbnailId: string) {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/thumbnails/${thumbnailId}`
-}
-
-export function bookFileUrl(bookId: string): string {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/file`
-}
-
-export function bookPageUrl(bookId: string, page: number, convertTo?: string): string {
-  let url = `${urls.originNoSlash}/api/v1/books/${bookId}/pages/${page}`
-  if (convertTo) {
-    url += `?convert=${convertTo}`
+    return bookDtoRepository
+      .findPreviousInSeriesOrNull(bookId, principal.user.id)
+      ?.restrictUrl(!principal.user.isAdmin)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
-  return url
-}
 
-export function bookPageThumbnailUrl(bookId: string, page: number): string {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/pages/${page}/thumbnail`
-}
+  @Operation(summary = "Get next book in series", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @GetMapping("api/v1/books/{bookId}/next")
+  fun getBookSiblingNext(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): BookDto {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
 
-export function bookManifestUrl(bookId: string): string {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/manifest`
-}
-
-export function bookPositionsUrl(bookId: string): string {
-  return `${urls.originNoSlash}/api/v1/books/${bookId}/positions`
-}
-export function seriesFileUrl(seriesId: string): string {
-  return `${urls.originNoSlash}/api/v1/series/${seriesId}/file`
-}
-
-export function seriesThumbnailUrl(seriesId: string): string {
-  return `${urls.originNoSlash}/api/v1/series/${seriesId}/thumbnail`
-}
-
-export function seriesThumbnailUrlByThumbnailId(seriesId: string, thumbnailId: string) {
-  return `${urls.originNoSlash}/api/v1/series/${seriesId}/thumbnails/${thumbnailId}`
-}
-
-export function collectionThumbnailUrl(collectionId: string): string {
-  return `${urls.originNoSlash}/api/v1/collections/${collectionId}/thumbnail`
-}
-
-export function collectionThumbnailUrlByThumbnailId(collectionId: string, thumbnailId: string) {
-  return `${urls.originNoSlash}/api/v1/collections/${collectionId}/thumbnails/${thumbnailId}`
-}
-
-export function readListThumbnailUrl(readListId: string): string {
-  return `${urls.originNoSlash}/api/v1/readlists/${readListId}/thumbnail`
-}
-
-export function readListFileUrl(readListId: string): string {
-  return `${urls.originNoSlash}/api/v1/readlists/${readListId}/file`
-}
-
-export function readListThumbnailUrlByThumbnailId(readListId: string, thumbnailId: string) {
-  return `${urls.originNoSlash}/api/v1/readlists/${readListId}/thumbnails/${thumbnailId}`
-}
-
-export function transientBookPageUrl(transientBookId: string, page: number): string {
-  return `${urls.originNoSlash}/api/v1/transient-books/${transientBookId}/pages/${page}`
-}
-
-export function pageHashUnknownThumbnailUrl(pageHash: PageHashUnknownDto, resize?: number): string {
-  let url = `${urls.originNoSlash}/api/v1/page-hashes/unknown/${pageHash.hash}/thumbnail`
-  if(resize) {
-    url += `?resize=${resize}`
+    return bookDtoRepository
+      .findNextInSeriesOrNull(bookId, principal.user.id)
+      ?.restrictUrl(!principal.user.isAdmin)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
-  return url
-}
 
-export function pageHashKnownThumbnailUrl(pageHash: PageHashKnownDto): string {
-  return `${urls.originNoSlash}/api/v1/page-hashes/${pageHash.hash}/thumbnail`
-}
+  @Operation(summary = "List book's readlists", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @GetMapping("api/v1/books/{bookId}/readlists")
+  fun getReadListsByBookId(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+  ): List<ReadListDto> {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
 
-```
-### File: komga-webui/src/router.ts
-Contains the Vue.js router configuration with history mode and route definitions. The router uses the `urls.base` configuration as its base path.
-
-
-```typescript
-import urls from '@/functions/urls'
-import Vue from 'vue'
-import Router from 'vue-router'
-import store from './store'
-import {LIBRARIES_ALL, LIBRARY_ROUTE} from '@/types/library'
-
-const qs = require('qs')
-
-Vue.use(Router)
-
-const lStore = store as any
-
-const adminGuard = (to: any, from: any, next: any) => {
-  if (!lStore.getters.meAdmin) next({name: 'home'})
-  else next()
-}
-
-const noLibraryGuard = (to: any, from: any, next: any) => {
-  if (lStore.state.komgaLibraries.libraries.length === 0) {
-    next({name: 'welcome'})
-  } else next()
-}
-
-const noLibraryNorPinGuard = (to: any, from: any, next: any) => {
-  if (lStore.state.komgaLibraries.libraries.length === 0) {
-    next({name: 'welcome'})
-  } else if (lStore.getters.getLibrariesPinned.length === 0) {
-    next({name: 'no-pins'})
-  } else next()
-}
-
-const getLibraryRoute = (libraryId: string) => {
-  switch ((lStore.getters.getLibraryRoute(libraryId) as LIBRARY_ROUTE)) {
-    case LIBRARY_ROUTE.COLLECTIONS:
-      return 'browse-collections'
-    case LIBRARY_ROUTE.READLISTS:
-      return 'browse-readlists'
-    case LIBRARY_ROUTE.BROWSE:
-      return 'browse-libraries'
-    case LIBRARY_ROUTE.BOOKS:
-      return 'browse-books'
-    case LIBRARY_ROUTE.RECOMMENDED:
-    default:
-      return libraryId === LIBRARIES_ALL ? 'browse-libraries' : 'recommended-libraries'
+    return readListRepository
+      .findAllContainingBookId(bookId, principal.user.getAuthorizedLibraryIds(null), principal.user.restrictions)
+      .map { it.toDto() }
   }
-}
 
-const router = new Router({
-  mode: 'history',
-  base: urls.base,
-  parseQuery(query: string) {
-    return qs.parse(query)
-  },
-  stringifyQuery(query: Object) {
-    const res = qs.stringify(query)
-    return res ? `?${res}` : ''
-  },
-  routes: [
-    {
-      path: '/',
-      name: 'home',
-      redirect: {name: 'dashboard'},
-      component: () => import(/* webpackChunkName: "home" */ './views/HomeView.vue'),
-      children: [
-        {
-          path: '/welcome',
-          name: 'welcome',
-          component: () => import(/* webpackChunkName: "welcome" */ './views/WelcomeView.vue'),
-        },
-        {
-          path: '/no-pins',
-          name: 'no-pins',
-          component: () => import(/* webpackChunkName: "no-pins" */ './views/NoPinnedLibraries.vue'),
-        },
-        {
-          path: '/dashboard',
-          name: 'dashboard',
-          beforeEnter: noLibraryNorPinGuard,
-          component: () => import(/* webpackChunkName: "dashboard" */ './views/DashboardView.vue'),
-        },
-        {
-          path: '/settings/users',
-          name: 'settings-users',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "settings-users" */ './views/SettingsUsers.vue'),
-          children: [
-            {
-              path: '/settings/users/add',
-              name: 'settings-users-add',
-              component: () => import(/* webpackChunkName: "settings-user" */ './components/dialogs/UserAddDialog.vue'),
-            },
-          ],
-        },
-        {
-          path: '/settings/server',
-          name: 'settings-server',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "settings-server" */ './views/SettingsServer.vue'),
-        },
-        {
-          path: '/settings/ui',
-          name: 'settings-ui',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "settings-ui" */ './views/UISettings.vue'),
-        },
-        {
-          path: '/settings/metrics',
-          name: 'metrics',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "metrics" */ './views/MetricsView.vue'),
-        },
-        {
-          path: '/settings/announcements',
-          name: 'announcements',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "announcements" */ './views/AnnouncementsView.vue'),
-        },
-        {
-          path: '/settings/updates',
-          name: 'updates',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "updates" */ './views/UpdatesView.vue'),
-        },
-        {
-          path: '/media-management/analysis',
-          name: 'media-analysis',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "media-analysis" */ './views/MediaAnalysis.vue'),
-        },
-        {
-          path: '/media-management/missing-posters',
-          name: 'missing-posters',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "missing-posters" */ './views/MissingPosters.vue'),
-        },
-        {
-          path: '/media-management/duplicate-files',
-          name: 'duplicate-files',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "duplicate-files" */ './views/DuplicateFiles.vue'),
-        },
-        {
-          path: '/media-management/duplicate-pages/known',
-          name: 'settings-duplicate-pages-known',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "duplicate-pages-known" */ './views/DuplicatePagesKnown.vue'),
-        },
-        {
-          path: '/media-management/duplicate-pages/unknown',
-          name: 'settings-duplicate-pages-unknown',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "duplicate-pages-new" */ './views/DuplicatePagesUnknown.vue'),
-        },
-        {
-          path: '/history',
-          name: 'history',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "history" */ './views/HistoryView.vue'),
-        },
-        {
-          path: '/account/me',
-          name: 'account-me',
-          component: () => import(/* webpackChunkName: "account-me" */ './views/AccountView.vue'),
-        },
-        {
-          path: '/account/api-keys',
-          name: 'account-api-keys',
-          component: () => import(/* webpackChunkName: "account-api-keys" */ './views/ApiKeys.vue'),
-        },
-        {
-          path: '/account/settings-ui',
-          name: 'account-settings-ui',
-          component: () => import(/* webpackChunkName: "account-settings-ui" */ './views/UIUserSettings.vue'),
-        },
-        {
-          path: '/account/authentication-activity',
-          name: 'account-activity',
-          component: () => import(/* webpackChunkName: "account-activity" */ './views/SelfAuthenticationActivity.vue'),
-        },
-        {
-          path: '/libraries/:libraryId?',
-          name: 'libraries',
-          redirect: (route) => ({
-            name: getLibraryRoute(route.params.libraryId || LIBRARIES_ALL),
-            params: {libraryId: route.params.libraryId || LIBRARIES_ALL},
-          }),
-        },
-        {
-          path: '/libraries/:libraryId/recommended',
-          name: 'recommended-libraries',
-          beforeEnter: noLibraryGuard,
-          component: () => import(/* webpackChunkName: "dashboard" */ './views/DashboardView.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
-        },
-        {
-          path: '/libraries/:libraryId/books',
-          name: 'browse-books',
-          beforeEnter: noLibraryGuard,
-          component: () => import(/* webpackChunkName: "browse-books" */ './views/BrowseBooks.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
-        },
-        {
-          path: '/libraries/:libraryId/series',
-          name: 'browse-libraries',
-          beforeEnter: noLibraryGuard,
-          component: () => import(/* webpackChunkName: "browse-libraries" */ './views/BrowseLibraries.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
-        },
-        {
-          path: '/libraries/:libraryId/collections',
-          name: 'browse-collections',
-          beforeEnter: noLibraryGuard,
-          component: () => import(/* webpackChunkName: "browse-collections" */ './views/BrowseCollections.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
-        },
-        {
-          path: '/libraries/:libraryId/readlists',
-          name: 'browse-readlists',
-          beforeEnter: noLibraryGuard,
-          component: () => import(/* webpackChunkName: "browse-readlists" */ './views/BrowseReadLists.vue'),
-          props: (route) => ({libraryId: route.params.libraryId}),
-        },
-        {
-          path: '/collections/:collectionId',
-          name: 'browse-collection',
-          component: () => import(/* webpackChunkName: "browse-collection" */ './views/BrowseCollection.vue'),
-          props: (route) => ({collectionId: route.params.collectionId}),
-        },
-        {
-          path: '/readlists/:readListId',
-          name: 'browse-readlist',
-          component: () => import(/* webpackChunkName: "browse-readlist" */ './views/BrowseReadList.vue'),
-          props: (route) => ({readListId: route.params.readListId}),
-        },
-        {
-          path: '/series/:seriesId',
-          name: 'browse-series',
-          component: () => import(/* webpackChunkName: "browse-series" */ './views/BrowseSeries.vue'),
-          props: (route) => ({seriesId: route.params.seriesId}),
-        },
-        {
-          path: '/book/:bookId',
-          name: 'browse-book',
-          component: () => import(/* webpackChunkName: "browse-book" */ './views/BrowseBook.vue'),
-          props: (route) => ({bookId: route.params.bookId}),
-        },
-        {
-          path: '/oneshot/:seriesId',
-          name: 'browse-oneshot',
-          component: () => import(/* webpackChunkName: "browse-oneshot" */ './views/BrowseOneshot.vue'),
-          props: (route) => ({seriesId: route.params.seriesId}),
-        },
-        {
-          path: '/search',
-          name: 'search',
-          component: () => import(/* webpackChunkName: "search" */ './views/SearchView.vue'),
-        },
-        {
-          path: '/import/books',
-          name: 'import-books',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "import-books" */ './views/ImportBooks.vue'),
-        },
-        {
-          path: '/import/readlist',
-          name: 'import-readlist',
-          beforeEnter: adminGuard,
-          component: () => import(/* webpackChunkName: "import-readlist" */ './views/ImportReadList.vue'),
-        },
-      ],
-    },
-    {
-      path: '/startup',
-      name: 'startup',
-      component: () => import(/* webpackChunkName: "startup" */ './views/StartupView.vue'),
-    },
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import(/* webpackChunkName: "login" */ './views/LoginView.vue'),
-    },
-    {
-      path: '/book/:bookId/read',
-      name: 'read-book',
-      component: () => import(/* webpackChunkName: "read-book" */ './views/DivinaReader.vue'),
-      props: (route) => ({bookId: route.params.bookId}),
-    },
-    {
-      path: '/book/:bookId/read-epub',
-      name: 'read-epub',
-      component: () => import(/* webpackChunkName: "read-epub" */ './views/EpubReader.vue'),
-      props: (route) => ({bookId: route.params.bookId}),
-    },
-    {
-      path: '*',
-      name: 'notfound',
-      component: () => import(/* webpackChunkName: "notfound" */ './views/PageNotFound.vue'),
-    },
-  ],
-  scrollBehavior(to, from, savedPosition) {
-    if (savedPosition) {
-      return savedPosition
-    } else {
-      if (to.name !== from.name) {
-        return {x: 0, y: 0}
-      }
-    }
-  },
-})
+  @Operation(summary = "Get book's poster image", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @ApiResponse(content = [Content(schema = Schema(type = "string", format = "binary"))])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/thumbnail"],
+    produces = [MediaType.IMAGE_JPEG_VALUE],
+  )
+  fun getBookThumbnail(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): ByteArray {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
 
-router.beforeEach((to, from, next) => {
-  // avoid document.title flickering when changing route
-  if (!['read-book', 'read-epub', 'browse-book', 'browse-oneshot', 'browse-series', 'browse-libraries', 'browse-books',
-    'recommended-libraries', 'browse-collection', 'browse-collections', 'browse-readlist', 'browse-readlists'].includes(<string>to.name)
+    return bookLifecycle.getThumbnailBytes(bookId)?.bytes ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Get book poster image", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @ApiResponse(content = [Content(schema = Schema(type = "string", format = "binary"))])
+  @GetMapping(value = ["api/v1/books/{bookId}/thumbnails/{thumbnailId}"], produces = [MediaType.IMAGE_JPEG_VALUE])
+  fun getBookThumbnailById(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+    @PathVariable(name = "thumbnailId") thumbnailId: String,
+  ): ByteArray {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
+
+    return bookLifecycle.getThumbnailBytesByThumbnailId(thumbnailId)?.bytes
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "List book posters", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @GetMapping(value = ["api/v1/books/{bookId}/thumbnails"], produces = [MediaType.APPLICATION_JSON_VALUE])
+  fun getBookThumbnails(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+  ): Collection<ThumbnailBookDto> {
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
+
+    return thumbnailBookRepository
+      .findAllByBookId(bookId)
+      .map { it.toDto() }
+  }
+
+  @Operation(summary = "Add book poster", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @PostMapping(value = ["api/v1/books/{bookId}/thumbnails"], consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+  @PreAuthorize("hasRole('ADMIN')")
+  fun addUserUploadedBookThumbnail(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+    @RequestParam("file") file: MultipartFile,
+    @RequestParam("selected") selected: Boolean = true,
+  ): ThumbnailBookDto {
+    val book = bookRepository.findByIdOrNull(bookId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+    val mediaType = file.inputStream.buffered().use { contentDetector.detectMediaType(it) }
+    if (!contentDetector.isImage(mediaType))
+      throw ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+
+    return bookLifecycle
+      .addThumbnailForBook(
+        ThumbnailBook(
+          bookId = book.id,
+          thumbnail = file.bytes,
+          type = ThumbnailBook.Type.USER_UPLOADED,
+          selected = selected,
+          fileSize = file.bytes.size.toLong(),
+          mediaType = mediaType,
+          dimension = imageAnalyzer.getDimension(file.inputStream.buffered()) ?: Dimension(0, 0),
+        ),
+        if (selected) MarkSelectedPreference.YES else MarkSelectedPreference.NO,
+      ).toDto()
+  }
+
+  @Operation(summary = "Mark book poster as selected", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @PutMapping("api/v1/books/{bookId}/thumbnails/{thumbnailId}/selected")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun markBookThumbnailSelected(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+    @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    document.title = 'Komga'
+    thumbnailBookRepository.findByIdOrNull(thumbnailId)?.let {
+      thumbnailBookRepository.markSelected(it)
+      eventPublisher.publishEvent(DomainEvent.ThumbnailBookAdded(it.copy(selected = true)))
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
 
-  if (window.opener !== null &&
-    window.name === 'oauth2Login' &&
-    to.query.server_redirect === 'Y'
+  @Operation(summary = "Delete book poster", description = "Only uploaded posters can be deleted.", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @DeleteMapping("api/v1/books/{bookId}/thumbnails/{thumbnailId}")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun deleteUserUploadedBookThumbnail(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable(name = "bookId") bookId: String,
+    @PathVariable(name = "thumbnailId") thumbnailId: String,
   ) {
-    if (!to.query.error) {
-      // authentication succeeded, we redirect the parent window so that it can login via cookie
-      window.opener.location.href = urls.origin
-    } else {
-      // authentication failed, we cascade the error message to the parent
-      window.opener.location.href = window.location
-    }
-    // we can close the popup
-    window.close()
+    thumbnailBookRepository.findByIdOrNull(thumbnailId)?.let {
+      try {
+        bookLifecycle.deleteThumbnailForBook(it)
+      } catch (e: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
 
-  if (to.name !== 'startup' && to.name !== 'login' && !lStore.getters.authenticated) {
-    const query = Object.assign({}, to.query, {redirect: to.fullPath})
-    next({name: 'startup', query: query})
-  } else next()
-})
+  @Operation(summary = "List book pages", tags = [OpenApiConfiguration.TagNames.BOOK_PAGES])
+  @GetMapping("api/v1/books/{bookId}/pages")
+  fun getBookPages(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): List<PageDto> =
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
 
-export default router
+      val media = mediaRepository.findById(book.id)
+      when (media.status) {
+        Media.Status.UNKNOWN -> throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book has not been analyzed yet")
+        Media.Status.OUTDATED -> throw ResponseStatusException(
+          HttpStatus.NOT_FOUND,
+          "Book is outdated and must be re-analyzed",
+        )
+
+        Media.Status.ERROR -> throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book analysis failed")
+        Media.Status.UNSUPPORTED -> throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book format is not supported")
+        Media.Status.READY -> {
+          val pages = if (media.profile == MediaProfile.PDF) bookAnalyzer.getPdfPagesDynamic(media) else media.pages
+          pages.mapIndexed { index, bookPage ->
+            PageDto(
+              number = index + 1,
+              fileName = bookPage.fileName,
+              mediaType = bookPage.mediaType,
+              width = bookPage.dimension?.width,
+              height = bookPage.dimension?.height,
+              sizeBytes = bookPage.fileSize,
+            )
+          }
+        }
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+  @Operation(summary = "Get book page image", tags = [OpenApiConfiguration.TagNames.BOOK_PAGES])
+  @ApiResponse(content = [Content(mediaType = "image/*", schema = Schema(type = "string", format = "binary"))])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/pages/{pageNumber}"],
+    produces = [MediaType.ALL_VALUE],
+  )
+  @PreAuthorize("hasRole('PAGE_STREAMING')")
+  fun getBookPageByNumber(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    request: ServletWebRequest,
+    @PathVariable bookId: String,
+    @PathVariable pageNumber: Int,
+    @Parameter(
+      description = "Convert the image to the provided format.",
+      schema = Schema(allowableValues = ["jpeg", "png"]),
+    )
+    @RequestParam(value = "convert", required = false)
+    convertTo: String?,
+    @Parameter(description = "If set to true, pages will start at index 0. If set to false, pages will start at index 1.")
+    @RequestParam(value = "zero_based", defaultValue = "false")
+    zeroBasedIndex: Boolean,
+    @Parameter(description = "Some very limited server driven content negotiation is handled. If a book is a PDF book, and the Accept header contains 'application/pdf' as a more specific type than other 'image/' types, a raw PDF page will be returned.")
+    @RequestHeader(HttpHeaders.ACCEPT, required = false)
+    acceptHeaders: MutableList<MediaType>?,
+    @RequestParam(value = "contentNegotiation", defaultValue = "true")
+    contentNegotiation: Boolean,
+  ): ResponseEntity<ByteArray> = commonBookController.getBookPageInternal(bookId, if (zeroBasedIndex) pageNumber + 1 else pageNumber, convertTo, request, principal, if (contentNegotiation) acceptHeaders else null)
+
+  @Operation(summary = "Get book page thumbnail", description = "The image is resized to 300px on the largest dimension.", tags = [OpenApiConfiguration.TagNames.BOOK_PAGES])
+  @ApiResponse(content = [Content(schema = Schema(type = "string", format = "binary"))])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/pages/{pageNumber}/thumbnail"],
+    produces = [MediaType.IMAGE_JPEG_VALUE],
+  )
+  fun getBookPageThumbnailByNumber(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    request: WebRequest,
+    @PathVariable bookId: String,
+    @PathVariable pageNumber: Int,
+  ): ResponseEntity<ByteArray> =
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      val media = mediaRepository.findById(bookId)
+      if (request.checkNotModified(getBookLastModified(media))) {
+        return@let ResponseEntity
+          .status(HttpStatus.NOT_MODIFIED)
+          .setNotModified(media)
+          .body(ByteArray(0))
+      }
+
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      try {
+        val pageContent = bookLifecycle.getBookPage(book, pageNumber, resizeTo = 300)
+
+        ResponseEntity
+          .ok()
+          .contentType(getMediaTypeOrDefault(pageContent.mediaType))
+          .setNotModified(media)
+          .body(pageContent.bytes)
+      } catch (ex: IndexOutOfBoundsException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Page number does not exist")
+      } catch (ex: ImageConversionException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, ex.message)
+      } catch (ex: MediaNotReadyException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book analysis failed")
+      } catch (ex: NoSuchFileException) {
+        logger.warn(ex) { "File not found: $book" }
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "File not found, it may have moved")
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+  @Operation(summary = "Get book's WebPub manifest", tags = [OpenApiConfiguration.TagNames.BOOK_WEBPUB])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/manifest"],
+    produces = [MEDIATYPE_WEBPUB_JSON_VALUE, MEDIATYPE_DIVINA_JSON_VALUE],
+  )
+  fun getBookWebPubManifest(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): ResponseEntity<WPPublicationDto> {
+    val manifest = commonBookController.getWebPubManifestInternal(principal, bookId, webPubGenerator)
+    return ResponseEntity
+      .ok()
+      .contentType(manifest.mediaType)
+      .body(manifest)
+  }
+
+  @Operation(summary = "List book's positions", description = "The Positions API is a proposed standard for OPDS 2 and Readium. It is used by the Epub Reader.", tags = [OpenApiConfiguration.TagNames.BOOK_WEBPUB])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/positions"],
+    produces = [MEDIATYPE_POSITION_LIST_JSON_VALUE],
+  )
+  fun getBookPositions(
+    request: HttpServletRequest,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): ResponseEntity<R2Positions> =
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      val media = mediaRepository.findById(book.id)
+
+      if (ServletWebRequest(request).checkNotModified(getBookLastModified(media))) {
+        return ResponseEntity
+          .status(HttpStatus.NOT_MODIFIED)
+          .setNotModified(media)
+          .body(null)
+      }
+
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      val extension =
+        mediaRepository.findExtensionByIdOrNull(book.id) as? MediaExtensionEpub
+          ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+      ResponseEntity
+        .ok()
+        .contentType(MEDIATYPE_POSITION_LIST_JSON)
+        .setNotModified(media)
+        .body(R2Positions(extension.positions.size, extension.positions))
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+  @Operation(summary = "Get book's WebPub manifest (Epub)", tags = [OpenApiConfiguration.TagNames.BOOK_WEBPUB])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/manifest/epub"],
+    produces = [MEDIATYPE_WEBPUB_JSON_VALUE],
+  )
+  fun getBookWebPubManifestEpub(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): WPPublicationDto = commonBookController.getWebPubManifestEpubInternal(principal, bookId, webPubGenerator)
+
+  @Operation(summary = "Get book's WebPub manifest (PDF)", tags = [OpenApiConfiguration.TagNames.BOOK_WEBPUB])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/manifest/pdf"],
+    produces = [MEDIATYPE_WEBPUB_JSON_VALUE],
+  )
+  fun getBookWebPubManifestPdf(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): WPPublicationDto = commonBookController.getWebPubManifestPdfInternal(principal, bookId, webPubGenerator)
+
+  @Operation(summary = "Get book's WebPub manifest (DiViNa)", tags = [OpenApiConfiguration.TagNames.BOOK_WEBPUB])
+  @GetMapping(
+    value = ["api/v1/books/{bookId}/manifest/divina"],
+    produces = [MEDIATYPE_DIVINA_JSON_VALUE],
+  )
+  fun getBookWebPubManifestDivina(
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+    @PathVariable bookId: String,
+  ): WPPublicationDto = commonBookController.getWebPubManifestDivinaInternal(principal, bookId, webPubGenerator)
+
+  @Operation(summary = "Analyze book", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PostMapping("api/v1/books/{bookId}/analyze")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun bookAnalyze(
+    @PathVariable bookId: String,
+  ) {
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      taskEmitter.analyzeBook(book, HIGH_PRIORITY)
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Refresh book metadata", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PostMapping("api/v1/books/{bookId}/metadata/refresh")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun bookRefreshMetadata(
+    @PathVariable bookId: String,
+  ) {
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      taskEmitter.refreshBookMetadata(book, priority = HIGH_PRIORITY)
+      taskEmitter.refreshBookLocalArtwork(book, priority = HIGH_PRIORITY)
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Update book metadata", description = "Set a field to null to unset the metadata. You can omit fields you don't want to update.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PatchMapping("api/v1/books/{bookId}/metadata")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  fun updateBookMetadata(
+    @PathVariable bookId: String,
+    @Parameter(description = "Metadata fields to update. Set a field to null to unset the metadata. You can omit fields you don't want to update.")
+    @Valid
+    @RequestBody
+    newMetadata: BookMetadataUpdateDto,
+  ) = bookMetadataRepository.findByIdOrNull(bookId)?.let { existing ->
+    val updated = existing.patch(newMetadata)
+    bookMetadataRepository.update(updated)
+
+    bookRepository.findByIdOrNull(bookId)?.let { updatedBook ->
+      taskEmitter.aggregateSeriesMetadata(updatedBook.seriesId)
+      updatedBook.let { eventPublisher.publishEvent(DomainEvent.BookUpdated(it)) }
+    }
+  } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+
+  @Operation(summary = "Update book metadata in bulk", description = "Set a field to null to unset the metadata. You can omit fields you don't want to update.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PatchMapping("api/v1/books/metadata")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  fun updateBookMetadataByBatch(
+    @Parameter(description = "A map of book IDs which values are the metadata fields to update. Set a field to null to unset the metadata. You can omit fields you don't want to update.")
+    @Valid
+    @RequestBody
+    newMetadatas: Map<String, BookMetadataUpdateDto>,
+  ) {
+    val updatedBooks =
+      newMetadatas.mapNotNull { (bookId, newMetadata) ->
+        bookMetadataRepository.findByIdOrNull(bookId)?.let { existing ->
+          val updated = existing.patch(newMetadata)
+          bookMetadataRepository.update(updated)
+
+          bookRepository.findByIdOrNull(bookId)
+        }
+      }
+
+    updatedBooks.forEach { eventPublisher.publishEvent(DomainEvent.BookUpdated(it)) }
+    updatedBooks.map { it.seriesId }.distinct().forEach { taskEmitter.aggregateSeriesMetadata(it) }
+  }
+
+  @Operation(summary = "Mark book's read progress", description = "Mark book as read and/or change page progress.", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PatchMapping("api/v1/books/{bookId}/read-progress")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  fun markBookReadProgress(
+    @PathVariable bookId: String,
+    @Parameter(description = "page can be omitted if completed is set to true. completed can be omitted, and will be set accordingly depending on the page passed and the total number of pages in the book.")
+    @Valid
+    @RequestBody
+    readProgress: ReadProgressUpdateDto,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      try {
+        if (readProgress.completed != null && readProgress.completed)
+          bookLifecycle.markReadProgressCompleted(book.id, principal.user)
+        else
+          bookLifecycle.markReadProgress(book, principal.user, readProgress.page!!)
+      } catch (e: IllegalArgumentException) {
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Mark book as unread", description = "Mark book as unread", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @DeleteMapping("api/v1/books/{bookId}/read-progress")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  fun deleteBookReadProgress(
+    @PathVariable bookId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      bookLifecycle.deleteReadProgress(book, principal.user)
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Import books", tags = [OpenApiConfiguration.TagNames.BOOK_IMPORT])
+  @PostMapping("api/v1/books/import")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun importBooks(
+    @RequestBody bookImportBatch: BookImportBatchDto,
+  ) {
+    bookImportBatch.books.forEach {
+      try {
+        taskEmitter.importBook(
+          sourceFile = it.sourceFile,
+          seriesId = it.seriesId,
+          copyMode = bookImportBatch.copyMode,
+          destinationName = it.destinationName,
+          upgradeBookId = it.upgradeBookId,
+          priority = HIGHEST_PRIORITY,
+        )
+      } catch (e: Exception) {
+        logger.error(e) { "Error while creating import task for: $it" }
+      }
+    }
+  }
+
+  @Operation(summary = "Delete book file", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @DeleteMapping("api/v1/books/{bookId}/file")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun deleteBookFile(
+    @PathVariable bookId: String,
+  ) {
+    taskEmitter.deleteBook(
+      bookId = bookId,
+      priority = HIGHEST_PRIORITY,
+    )
+  }
+
+  @Operation(summary = "Regenerate books posters", tags = [OpenApiConfiguration.TagNames.BOOK_POSTER])
+  @PutMapping("api/v1/books/thumbnails")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun booksRegenerateThumbnails(
+    @RequestParam(name = "for_bigger_result_only", required = false) forBiggerResultOnly: Boolean = false,
+  ) {
+    taskEmitter.findBookThumbnailsToRegenerate(forBiggerResultOnly, LOWEST_PRIORITY)
+  }
+
+  @PostMapping("api/v1/books/{bookId}/push-to-kindle")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun pushToKindle(
+    @PathVariable bookId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    // Immediate feedback when the button is pressed
+    logger.info { "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting..." }
+
+    bookRepository.findByIdOrNull(bookId)?.let { book ->
+      contentRestrictionChecker.checkContentRestriction(principal.user, book)
+
+      val media = mediaRepository.findById(book.id)
+      if (media.status != Media.Status.READY) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book is not ready")
+      }
+
+      // Create initialization event
+      val series = book.seriesId?.let { seriesRepository.findByIdOrNull(it) }
+      if (series != null) {
+        historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
+        logger.info { "[push_to_kindle] Created initialization event for book: $bookId" }
+      } else {
+        logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping initialization event" }
+      }
+
+      try {
+        val processBuilder = ProcessBuilder("python3", "/app/komga_custom/push_to_kindle.py", book.url.path)
+        processBuilder.redirectErrorStream(true)
+        val process = processBuilder.start()
+        val reader = process.inputStream.bufferedReader()
+        val preface = "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting...\n"
+        val output = reader.readText()
+        logger.info { "Push to kindle script output: $preface$output" }
+        val exitCode = process.waitFor()
+        
+        if (exitCode == 0) {
+          // Parse Kindle path from output
+          val kindlePath = extractKindlePathFromOutput(output)
+          if (kindlePath != null) {
+            // Create success event for successful push
+            if (series != null) {
+              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath))
+            } else {
+              logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping success event" }
+            }
+            logger.info { "[push_to_kindle] Successfully created success event for book: $bookId, Kindle path: $kindlePath" }
+          } else {
+            logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
+            // Create success event even without kindle path
+            if (series != null) {
+              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, ""))
+            }
+          }
+        } else {
+          // Script failed - parse error from output
+          val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
+          logger.error { "[push_to_kindle] Script failed for book: $bookId, exit code: $exitCode, error: $errorMessage" }
+          // Create failure event
+          if (series != null) {
+            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+          }
+          throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed: $errorMessage")
+        }
+      } catch (e: Exception) {
+        logger.error(e) { "Error while executing push to kindle script for book: $bookId" }
+        // Create failure event
+        val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
+        if (series != null) {
+          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
+        }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script: $errorMessage")
+      }
+    } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  private fun extractKindlePathFromOutput(output: String): String? {
+    // Extract the target folder from the output
+    // Look for structured output pattern: HISTORICAL_EVENT_KINDLE_PATH:folder_name
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("HISTORICAL_EVENT_KINDLE_PATH:")) {
+        return line.substringAfter("HISTORICAL_EVENT_KINDLE_PATH:").trim()
+      }
+      // Fallback to old patterns for backward compatibility
+      if (line.contains("Successfully uploaded") && line.contains("to Kindle folder:")) {
+        val match = Regex("Successfully uploaded .* to Kindle folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+      if (line.contains("Multiple files detected, using series folder:")) {
+        val match = Regex("Multiple files detected, using series folder: (.*)").find(line)
+        if (match != null) {
+          return match.groupValues[1].trim()
+        }
+      }
+    }
+    return null
+  }
+
+  private fun extractErrorFromOutput(output: String): String? {
+    // Extract error information from the output
+    val lines = output.split("\n")
+    for (line in lines) {
+      if (line.startsWith("SCRIPT_ERROR_MESSAGE:")) {
+        return line.substringAfter("SCRIPT_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("KCC_ERROR_MESSAGE:")) {
+        return line.substringAfter("KCC_ERROR_MESSAGE:").trim()
+      }
+      if (line.startsWith("FILE_ERROR_MESSAGE:")) {
+        return line.substringAfter("FILE_ERROR_MESSAGE:").trim()
+      }
+    }
+    return null
+  }
+}
 
 ```
-### File: komga-webui/src/public-path.js
-Configures the webpack public path for asset loading. This is critical for ensuring that JavaScript and CSS files are loaded correctly in different environments.
+### File: komga_custom/push_to_kindle.py
+
+The `main()` function needs to be updated to:
+1. Add timing measurement around the main processing logic
+2. Output processing time in a structured format for the backend to parse
 
 
-```javascript
-// eslint-disable-next-line camelcase
-__webpack_public_path__ = process.env.NODE_ENV === 'production' ? window.location.origin + window.resourceBaseUrl : '/'
+```python
+import os
+import sys
+import tempfile
+import zipfile
+import subprocess
+import io
+import urllib.parse
+import shlex
+from PIL import Image
+from typing import List
+from pathlib import Path
+from clean_cbz import clean_cbz
+
+# NOTE: You need to install the following python packages:
+# pip install Pillow
+
+# --- Kindle configuration from environment variables ---
+KINDLE_IP = os.environ.get("KINDLE_IP", "192.168.29.55")
+KINDLE_USER = os.environ.get("KINDLE_USER", "root") 
+KINDLE_REMOTE_PATH = os.environ.get("KINDLE_REMOTE_PATH" ,"/mnt/us/book")
+KINDLE_SSH_PASSWORD = os.environ.get("KINDLE_SSH_PASSWORD", "dummy")  # Empty for passwordless auth
+KINDLE_SSH_PORT = os.environ.get("KINDLE_SSH_PORT", "2222")
+
+# Validate required environment variables
+if not KINDLE_IP:
+    print("Warning: KINDLE_IP not set, using default value. Please set KINDLE_IP environment variable.")
+if not KINDLE_USER:
+    print("Warning: KINDLE_USER not set, using default value. Please set KINDLE_USER environment variable.")
+if not KINDLE_REMOTE_PATH:
+    print("Warning: KINDLE_REMOTE_PATH not set, using default value. Please set KINDLE_REMOTE_PATH environment variable.")
+if not KINDLE_SSH_PASSWORD:
+    print("Info: KINDLE_SSH_PASSWORD not set, using passwordless SSH authentication.")
+else:
+    print("Info: Using password-based SSH authentication.")
+
+def decode_url_path(url_path: str) -> str:
+    """
+    Decode URL-encoded path to actual file system path.
+    """
+    try:
+        # Decode URL-encoded characters
+        decoded_path = urllib.parse.unquote(url_path)
+        return decoded_path
+    except Exception as e:
+        print(f"Error decoding URL path {url_path}: {e}")
+        return url_path
+
+def get_files_list_from_webui() -> List[str]:
+    """
+    This function gets the file list from the command line arguments.
+    The Komga backend will call this script with the file paths of the book/series.
+    """
+    if len(sys.argv) < 2:
+        print("Usage: python push_to_kindle.py <file1> <file2> ...")
+        sys.exit(1)
+    
+    # Decode URL-encoded paths
+    decoded_paths = [decode_url_path(path) for path in sys.argv[1:]]
+    return decoded_paths
+
+
+
+
+def extract_series_name_from_path(file_path: str) -> str:
+    """
+    Extract series name from file path by looking for directory structure.
+    Assumes structure: /path/to/library/SeriesName/VolumeName/file.cbz
+    """
+    try:
+        # Check if the path has the expected structure
+        if not file_path:
+            return None
+            
+        # Normalize the path
+        normalized_path = os.path.normpath(file_path)
+        
+        # Split the path
+        parts = normalized_path.split(os.sep)
+        
+        # Check if we have at least 2 parts (series folder and file)
+        if len(parts) < 2:
+            return None
+            
+        # Get the directory containing the file (second to last part)
+        series_name = parts[-2]
+        
+        # Check if series name is empty or just dots
+        if not series_name or series_name == '.' or series_name == '..':
+            return None
+        
+        # Clean up series name for Kindle folder
+        # Remove special characters, limit length
+        clean_name = ''.join(c for c in series_name if c.isalnum() or c in ' -_').strip()
+        return clean_name[:100] if clean_name else None  # Increased to 100 characters for full series names
+    except Exception:
+        return None
+
+def is_epub_file(file_path: str) -> bool:
+    """
+    Check if the file is an EPUB format.
+    
+    Args:
+        file_path: Path to the file to check
+        
+    Returns:
+        bool: True if file is EPUB, False otherwise
+    """
+    if not file_path:
+        return False
+    
+    # Check file extension
+    file_ext = os.path.splitext(file_path)[1].lower()
+    return file_ext == '.epub' or file_ext == '.pdf'
+
+def push_to_kindle(file_path: str, target_folder: str = None, original_filename: str = None):
+    """
+    Pushes a file to Kindle using scp with configurable authentication and folder organization.
+    Preserves original filename during SCP transfer.
+    """
+    print("[push_to_kindle] Received command to push file to Kindle.", flush=True)
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    print(f"--- Debug: Pushing to Kindle ---")
+    print(f"File path: {file_path}")
+    print(f"Target folder: {target_folder}")
+    print(f"Original filename: {original_filename}")
+
+    try:
+        # Use original filename if provided, otherwise use current filename
+        filename = original_filename if original_filename else os.path.basename(file_path)
+        
+        # Determine remote path based on target folder and check if we need special handling
+        use_shell = False
+        if target_folder and target_folder.strip():
+            # Check if target folder has spaces or non-ASCII characters
+            if ' ' in target_folder or any(ord(c) > 127 for c in target_folder):
+                # Use shell command with proper quoting for special characters
+                remote_path = f"{KINDLE_USER}@{KINDLE_IP}:\"{KINDLE_REMOTE_PATH}/{target_folder}/\""
+                use_shell = True
+            else:
+                remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{target_folder}/"
+        else:
+            remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/New/"
+        
+        # Build the scp command based on authentication method and whether we need shell
+        if use_shell:
+            # Use shell execution for paths with special characters
+            if KINDLE_SSH_PASSWORD:
+                command_str = f"sshpass -p {KINDLE_SSH_PASSWORD} scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}\"{filename}\""
+            else:
+                command_str = f"scp -P {KINDLE_SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \"{file_path}\" {remote_path}\"{filename}\""
+            
+            print(f"Executing shell command: {command_str}")
+            result = subprocess.run(command_str, shell=True, capture_output=True, text=True, timeout=300)
+        else:
+            # Use normal subprocess list for simple paths
+            if KINDLE_SSH_PASSWORD:
+                command = [
+                    "sshpass",
+                    "-p", KINDLE_SSH_PASSWORD,
+                    "scp",
+                    "-P", KINDLE_SSH_PORT,
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    file_path,
+                    f"{remote_path}{filename}"
+                ]
+            else:
+                command = [
+                    "scp",
+                    "-P", KINDLE_SSH_PORT,
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    file_path,
+                    f"{remote_path}{filename}"
+                ]
+            
+            print(f"Executing command: {' '.join(command)}")
+            result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode == 0:
+            folder_display = target_folder if target_folder else "New"
+            print(f"Successfully uploaded {filename} to Kindle folder: {folder_display}")
+            # Add structured output for better parsing by backend
+            print(f"HISTORICAL_EVENT_KINDLE_PATH:{folder_display}")
+            if result.stdout.strip():
+                print(f"Stdout: {result.stdout}")
+        else:
+            print(f"Error uploading file to Kindle.")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"Stderr: {result.stderr}")
+            if result.stdout:
+                print(f"Stdout: {result.stdout}")
+
+    except subprocess.TimeoutExpired:
+        print(f"Upload timed out after 300 seconds")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        print(f"--- End Debug ---")
+        # Remove the temporary file after upload if it exists and is in /tmp
+        try:
+            if file_path.startswith("/tmp/") and os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"Removed temporary file: {file_path}")
+        except Exception as cleanup_err:
+            print(f"Warning: Failed to remove temporary file {file_path}: {cleanup_err}")
+
+
+def check_kindle_connectivity() -> bool:
+    """
+    Check if the Kindle device is reachable via SSH.
+    
+    Returns:
+        bool: True if Kindle is reachable, False otherwise
+    """
+    print(f"Checking connectivity to Kindle at {KINDLE_IP}:{KINDLE_SSH_PORT}...")
+    
+    try:
+        # Build a simple SSH command to test connectivity
+        if KINDLE_SSH_PASSWORD:
+            # Password-based authentication
+            command = [
+                "sshpass",
+                "-p", KINDLE_SSH_PASSWORD,
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                "echo 'connection_test'"
+            ]
+        else:
+            # Passwordless authentication (using SSH keys)
+            command = [
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "ConnectTimeout=10",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                "echo 'connection_test'"
+            ]
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        
+        if result.returncode == 0:
+            print("✓ Kindle connectivity check passed")
+            return True
+        else:
+            print("✗ Kindle connectivity check failed")
+            if result.stderr:
+                print(f"Connection error: {result.stderr.strip()}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("✗ Kindle connectivity check timed out")
+        return False
+    except Exception as e:
+        print(f"✗ Kindle connectivity check error: {e}")
+        return False
+
+def create_remote_folder(folder_name: str) -> bool:
+    """
+    Create a remote folder on Kindle device.
+    Checks connectivity first and terminates if Kindle is unreachable.
+    
+    Args:
+        folder_name: Name of the folder to create
+        
+    Returns:
+        bool: True if folder was created successfully, False otherwise
+    """
+    # First check if Kindle is reachable
+    if not check_kindle_connectivity():
+        print("❌ ERROR: Cannot reach Kindle device. Terminating push operation.")
+        print(f"Please check that:")
+        print(f"  - Kindle IP ({KINDLE_IP}) is correct")
+        print(f"  - Kindle SSH port ({KINDLE_SSH_PORT}) is correct") 
+        print(f"  - Kindle is connected to the network")
+        print(f"  - SSH credentials are correct")
+        sys.exit(1)  # Terminate the entire script
+    
+    print(f"Creating folder on Kindle: {folder_name}")
+    
+    try:
+        remote_path = f"{KINDLE_USER}@{KINDLE_IP}:{KINDLE_REMOTE_PATH}/{folder_name}"
+        
+        # For SSH command, escape folder name properly 
+        # Check if folder name has spaces or special characters
+        if ' ' in folder_name or any(ord(c) > 127 for c in folder_name):
+            # Use shell command with proper quoting for special characters
+            mkdir_command = f"mkdir -p \"{KINDLE_REMOTE_PATH}/{folder_name}\""
+        else:
+            mkdir_command = f"mkdir -p {KINDLE_REMOTE_PATH}/{folder_name}"
+        
+        # Build the ssh command to create directory
+        if KINDLE_SSH_PASSWORD:
+            # Password-based authentication
+            command = [
+                "sshpass",
+                "-p", KINDLE_SSH_PASSWORD,
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                mkdir_command
+            ]
+        else:
+            # Passwordless authentication (using SSH keys)
+            command = [
+                "ssh",
+                "-p", KINDLE_SSH_PORT,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "UserKnownHostsFile=/dev/null",
+                f"{KINDLE_USER}@{KINDLE_IP}",
+                mkdir_command
+            ]
+        
+        print(f"Executing command: {' '.join(command)}")
+        
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            print(f"✓ Successfully created folder: {folder_name}")
+            if result.stdout.strip():
+                print(f"Stdout: {result.stdout}")
+            return True
+        else:
+            print(f"✗ Error creating folder on Kindle.")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"Stderr: {result.stderr}")
+            if result.stdout:
+                print(f"Stdout: {result.stdout}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print(f"✗ SSH command timed out after 30 seconds")
+        return False
+    except Exception as e:
+        print(f"✗ An error occurred while creating folder: {e}")
+        return False
+
+def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str, str]:
+    """
+    Process a comic file using Kindle Comic Converter (KCC).
+    Always applies watermark removal before KCC processing.
+    
+    Args:
+        book_path: Path to the comic file (CBZ/CBR)
+        output_path: Directory where processed file should be saved
+        
+    Returns:
+        tuple: (success_status, output_file_path, original_filename)
+    """
+    kcc_script_dir = os.path.dirname(os.path.abspath(__file__))
+    kcc_script = os.path.join(kcc_script_dir, "kcc-c2e.py")
+    
+    if not os.path.exists(kcc_script):
+        print(f"Error: KCC script not found at {kcc_script}")
+        # Fallback for Docker environment
+        kcc_script = "/app/komga_custom/kcc-c2e.py"
+        if not os.path.exists(kcc_script):
+            print(f"Error: KCC script not found at {kcc_script} either.")
+            return False
+    
+    # Always clean the CBZ first (watermark removal)
+    print("Applying watermark removal before KCC processing...")
+    cleaned_cbz_path = clean_cbz(book_path)
+    if not cleaned_cbz_path or not os.path.exists(cleaned_cbz_path):
+        print("CBZ cleaning failed, using original file")
+        cleaned_cbz_path = book_path
+    else:
+        print(f"CBZ cleaned successfully: {cleaned_cbz_path}")
+    
+    # Get base filename without extension
+    base_filename = os.path.splitext(os.path.basename(book_path))[0]
+    # Create full output path with specific filename
+    output_file_path = os.path.join(output_path, f"{base_filename}_kcc.cbz")
+    
+    print(f"Processing with KCC: {cleaned_cbz_path}")
+    print(f"Output file: {output_file_path}")
+    
+    try:
+        # Add PYTHONPATH to include the directory containing kindlecomicconverter module
+        env = os.environ.copy()
+        env['PYTHONPATH'] = os.path.dirname(kcc_script)
+        command = [
+            "python3",
+            "-c",
+            f"import sys; sys.path.insert(0, '{os.path.dirname(kcc_script)}'); exec(open('{kcc_script}').read())",
+            "-p", "KPW5",
+#            "-q",
+#            "-u",
+            "-m",
+            "--cp", "2",
+            "--mozjpeg",
+            "-f", "CBZ",
+            "-o", output_file_path,
+            cleaned_cbz_path  # Use cleaned CBZ
+        ]
+        print(f"Executing KCC command with PYTHONPATH={env['PYTHONPATH']}")
+        print(f"Command: {' '.join(command)}")
+        result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=600)
+        if result.returncode == 0:
+            print("KCC processing completed successfully")
+            if result.stdout.strip():
+                print(f"KCC stdout: {result.stdout}")
+            return True, output_file_path, os.path.basename(book_path)
+        else:
+            print("Error during KCC processing")
+            print(f"Return code: {result.returncode}")
+            if result.stderr:
+                print(f"KCC stderr: {result.stderr}")
+            if result.stdout:
+                print(f"KCC stdout: {result.stdout}")
+            return False, cleaned_cbz_path, os.path.basename(book_path)
+    except subprocess.TimeoutExpired:
+        print("KCC processing timed out after 600 seconds")
+        return False, cleaned_cbz_path, os.path.basename(book_path)
+    except Exception as e:
+        print(f"Error during KCC processing: {e}")
+        return False, cleaned_cbz_path, os.path.basename(book_path)
+
+def main():
+    """
+    Main function to process and push files to Kindle with folder organization.
+    """
+    print("SCRIPT_STATUS:STARTING")
+    file_paths = get_files_list_from_webui()
+    print(f"Processing files: {file_paths}")
+
+    # Determine target folder based on number of files
+    target_folder = "New"
+    if len(file_paths) > 1:
+        # For multiple files, try to extract series name from first file
+        series_name = extract_series_name_from_path(file_paths[0])
+        if series_name:
+            target_folder = series_name
+            print(f"Multiple files detected, using series folder: {target_folder}")
+        else:
+            print("Multiple files detected but couldn't determine series, using 'New' folder")
+    else:
+        print("Single file detected, using 'New' folder")
+
+    # Create the target folder on Kindle
+    print("SCRIPT_STATUS:CREATING_FOLDER")
+    folder_success = create_remote_folder(target_folder)
+    if not folder_success:
+        print("SCRIPT_STATUS:FAILED")
+        print("SCRIPT_ERROR_CODE:FOLDER_CREATION_FAILED")
+        print("SCRIPT_ERROR_MESSAGE:Failed to create folder on Kindle device")
+        sys.exit(1)
+
+    temp_dir = '/tmp'
+    os.makedirs(temp_dir, exist_ok=True)
+
+    all_success = True
+    for file_path in file_paths:
+        print(f"--- Processing file: {file_path} ---")
+        print(f"FILE_STATUS:PROCESSING")
+        print(f"FILE_PATH:{file_path}")
+
+        # Check if file is EPUB
+        if is_epub_file(file_path):
+            print(f"EPUB file detected, skipping KCC processing and pushing directly.")
+            kcc_output_file = file_path
+            kcc_success = True
+            cleaned_cbz_path = False
+            original_filename = os.path.basename(file_path)
+        else:
+            kcc_output_dir = temp_dir
+
+            kcc_success, cleaned_cbz_path, original_filename = process_with_kcc(file_path, kcc_output_dir)
+            base_filename = os.path.splitext(os.path.basename(file_path))[0]
+            kcc_output_file = os.path.join(kcc_output_dir, f"{base_filename}_kcc.cbz")
+
+        if kcc_success:
+            if os.path.exists(kcc_output_file):
+                print(f"KCC processing successful. Pushing file to Kindle.")
+                print(f"FILE_STATUS:KCC_SUCCESS")
+                push_to_kindle(kcc_output_file, target_folder, original_filename)
+            else:
+                print(f"Error: KCC reported success, but output file '{kcc_output_file}' not found.")
+                print(f"FILE_STATUS:FAILED")
+                print(f"FILE_ERROR_CODE:OUTPUT_FILE_NOT_FOUND")
+                print(f"FILE_ERROR_MESSAGE:KCC reported success, but output file not found")
+                all_success = False
+        else:
+            print(f"KCC processing failed for {file_path}. The file will not be pushed to Kindle.")
+            print(f"FILE_STATUS:FAILED")
+            print(f"FILE_ERROR_CODE:KCC_PROCESSING_FAILED")
+            print(f"FILE_ERROR_MESSAGE:KCC processing failed")
+            all_success = False
+
+        # Remove cleaned CBZ if it was created
+        if cleaned_cbz_path and os.path.exists(cleaned_cbz_path):
+            try:
+                os.remove(cleaned_cbz_path)
+                print(f"Removed cleaned CBZ: {cleaned_cbz_path}")
+            except Exception as cleanup_err:
+                print(f"Warning: Failed to remove cleaned CBZ {cleaned_cbz_path}: {cleanup_err}")
+
+        print(f"--- Finished processing file: {file_path} ---")
+
+    if all_success:
+        print("SCRIPT_STATUS:SUCCESS")
+    else:
+        print("SCRIPT_STATUS:FAILED")
+        print("SCRIPT_ERROR_CODE:ONE_OR_MORE_FILES_FAILED")
+        print("SCRIPT_ERROR_MESSAGE:One or more files failed to process")
+        # Exit with non-zero code to ensure Kotlin controllers detect the failure
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
 ```
-### File: komga-webui/src/views/PageNotFound.vue
-The 404 page component that users see when they encounter routing issues.
+### File: komga-webui/src/views/HistoryView.vue
+
+The `formatPropertyKey` and `showDetails` methods may need updates to properly display the processing time in the history details dialog.
+
+## 4. Data Structures
 
 
 ```vue
 <template>
-  <v-row justify="center">
-    <empty-state :title="$t('page_not_found.page_not_found')"
-                 :sub-title="$t('page_not_found.page_does_not_exist')"
-                 icon="mdi-help-circle"
-                 icon-color="secondary"
+  <v-container fluid class="pa-6">
+    <v-data-table
+      :headers="headers"
+      :items="items"
+      :options.sync="options"
+      :server-items-length="totalElements"
+      :loading="loading"
+      sort-by="timestamp"
+      :sort-desc="true"
+      multi-sort
+      class="elevation-1"
+      :footer-props="{
+        itemsPerPageOptions: [20, 50, 100]
+      }"
     >
-      <v-btn color="primary" :to="{name: 'home'}">{{ $t('page_not_found.go_back_to_home_page') }}</v-btn>
-    </empty-state>
-  </v-row>
+      <template v-slot:item.type="{ item }">
+        <v-icon
+          :title="$t(`enums.historical_event_type.${item.type}`)"
+          :color="getEventColor(item.type)"
+        >{{ getIcon(item.type) }}</v-icon>
+      </template>
+
+      <template v-slot:item.seriesId="{ item }">
+        <router-link v-if="getSeries(item.seriesId)"
+                     :to="{name: 'browse-series', params: {seriesId: item.seriesId}}"
+                     class="link-underline"
+        >{{ getSeries(item.seriesId).metadata.title }}
+        </router-link>
+        <template v-else>{{ item.seriesId }}</template>
+      </template>
+
+      <template v-slot:item.bookId="{ item }">
+        <router-link v-if="getBook(item.bookId)"
+                     :to="{name: 'browse-book', params: {bookId: item.bookId}}"
+                     class="link-underline"
+        >{{ getBook(item.bookId).metadata.title }}
+        </router-link>
+        <template v-else>{{ item.bookId }}</template>
+      </template>
+
+      <template v-slot:item.timestamp="{ item }">
+        {{
+          new Intl.DateTimeFormat($i18n.locale, {
+            dateStyle: 'medium',
+            timeStyle: 'short'
+          }).format(item.timestamp)
+        }}
+      </template>
+
+      <template v-slot:item.properties="{ item }">
+        <v-btn icon small @click="showDetails(item)">
+          <v-icon small>mdi-information</v-icon>
+        </v-btn>
+      </template>
+
+      <template v-slot:footer.prepend>
+        <v-btn icon @click="loadData">
+          <v-icon>mdi-refresh</v-icon>
+        </v-btn>
+      </template>
+
+    </v-data-table>
+
+    <v-dialog
+      v-model="dialogDetails"
+      scrollable
+    >
+      <v-card v-if="dialogDetailsItem">
+        <v-card-title>{{ $t(`enums.historical_event_type.${dialogDetailsItem.type}`) }}</v-card-title>
+        <v-card-text>
+          <v-simple-table>
+            <tbody>
+            <tr v-for="[key, value] in Object.entries(dialogDetailsItem.properties)" :key="key">
+              <td class="text-capitalize font-weight-bold">{{ formatPropertyKey(key) }}</td>
+              <td>{{ value }}</td>
+            </tr>
+            <tr v-if="getPageHash(dialogDetailsItem)">
+              <td class="font-weight-bold">Page</td>
+              <td>
+                <v-img
+                  width="200"
+                  height="300"
+                  contain
+                  :src="pageHashKnownThumbnailUrl(getPageHash(dialogDetailsItem))"
+                />
+              </td>
+            </tr>
+            </tbody>
+          </v-simple-table>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer/>
+          <v-btn @click="dialogDetails = false" text>{{ $t('common.close') }}</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </v-container>
 </template>
 
 <script lang="ts">
-import EmptyState from '@/components/EmptyState.vue'
 import Vue from 'vue'
+import {HistoricalEventDto} from '@/types/komga-history'
+import {SeriesDto} from '@/types/komga-series'
+import {BookDto} from '@/types/komga-books'
+import {pageHashKnownThumbnailUrl} from '@/functions/urls'
+import {PageHashKnownDto} from '@/types/komga-pagehashes'
 
 export default Vue.extend({
-  name: 'PageNotFound',
-  components: { EmptyState },
+  name: 'HistoryView',
+  data: function () {
+    return {
+      pageHashKnownThumbnailUrl,
+      items: [] as HistoricalEventDto[],
+      totalElements: 0,
+      loading: true,
+      options: {} as any,
+      dialogDetails: false,
+      dialogDetailsItem: undefined as HistoricalEventDto | undefined,
+      seriesCache: [] as SeriesDto[],
+      seriesCacheNotFound: [] as string[],
+      booksCache: [] as BookDto[],
+      booksCacheNotFound: [] as string[],
+    }
+  },
+  watch: {
+    options: {
+      handler() {
+        this.loadData()
+      },
+      deep: true,
+    },
+  },
+  computed: {
+    headers(): object[] {
+      return [
+        {text: this.$t('history.header.type').toString(), value: 'type'},
+        {text: this.$t('history.header.series').toString(), value: 'seriesId'},
+        {text: this.$t('history.header.book').toString(), value: 'bookId'},
+        {text: this.$t('history.header.date').toString(), value: 'timestamp'},
+        {text: this.$t('history.header.details').toString(), value: 'properties', sortable: false},
+      ]
+    },
+  },
+  methods: {
+    getPageHash(item: HistoricalEventDto): PageHashKnownDto | undefined {
+      if (item.type !== 'DuplicatePageDeleted') return undefined
+      let size: any = item.properties['page file size' as any]
+      if (size === 'null') size = -1
+      return {
+        hash: item.properties['page file hash' as any],
+        size: size,
+        mediaType: item.properties['page media type' as any],
+      } as any
+    },
+    getSeries(seriesId: string): SeriesDto | undefined {
+      return this.seriesCache.find(x => x.id === seriesId)
+    },
+    getBook(bookId: string): BookDto | undefined {
+      return this.booksCache.find(x => x.id === bookId)
+    },
+    showDetails(item: HistoricalEventDto) {
+      this.dialogDetailsItem = item
+      this.dialogDetails = true
+    },
+    getIcon(type: string): string {
+      switch (type) {
+        case 'BookFileDeleted':
+          return 'mdi-file-remove'
+        case 'SeriesFolderDeleted':
+          return 'mdi-folder-remove'
+        case 'DuplicatePageDeleted':
+          return 'mdi-book-minus'
+        case 'BookConverted':
+          return 'mdi-archive-refresh'
+        case 'BookImported':
+          return 'mdi-import'
+        case 'BookPushedToKindleInitialized':
+        case 'BookPushedToKindleSuccess':
+        case 'BookPushedToKindleFailed':
+          return 'mdi-send'
+        default:
+          return ''
+      }
+    },
+    getEventColor(type: string): string {
+      switch (type) {
+        case 'BookPushedToKindleInitialized':
+          return '' // Default color for initialized
+        case 'BookPushedToKindleSuccess':
+          return 'green' // Green for success
+        case 'BookPushedToKindleFailed':
+          return 'red' // Red for failure
+        default:
+          return ''
+      }
+    },
+    formatPropertyKey(key: string): string {
+      // Convert snake_case to Title Case with spaces
+      return key
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    },
+    async loadData() {
+      this.loading = true
+
+      const {sortBy, sortDesc, page, itemsPerPage} = this.options
+
+      const pageRequest = {
+        page: page - 1,
+        size: itemsPerPage,
+        sort: [],
+      } as PageRequest
+
+      for (let i = 0; i < sortBy.length; i++) {
+        pageRequest.sort!!.push(`${sortBy[i]},${sortDesc[i] ? 'desc' : 'asc'}`)
+      }
+
+      const itemsPage = await this.$komgaHistory.getAll(pageRequest)
+      this.totalElements = itemsPage.totalElements
+      this.items = itemsPage.content
+
+      for (const seriesId of new Set(this.items.map(x => x.seriesId))) {
+        if (seriesId && !this.seriesCacheNotFound.includes(seriesId) && !this.getSeries(seriesId)) {
+          this.$komgaSeries.getOneSeries(seriesId)
+            .then(s => this.seriesCache.push(s))
+            .catch(() => this.seriesCacheNotFound.push(seriesId))
+        }
+      }
+
+      for (const bookId of new Set(this.items.map(x => x.bookId))) {
+        if (bookId && !this.booksCacheNotFound.includes(bookId) && !this.getBook(bookId)) {
+          this.$komgaBooks.getBook(bookId)
+            .then(b => this.booksCache.push(b))
+            .catch(() => this.booksCacheNotFound.push(bookId))
+        }
+      }
+
+      this.loading = false
+    },
+  },
 })
 </script>
 
@@ -896,115 +1862,88 @@ export default Vue.extend({
 </style>
 
 ```
-### File: komga/src/main/kotlin/org/gotson/komga/infrastructure/web/WebMvcConfiguration.kt
-Spring Boot configuration for serving static resources. This handles serving the built Vue.js application and static assets.
+### HistoricalEventDto (Frontend)
+```typescript
+export interface HistoricalEventDto {
+  type: string,
+  timestamp: Date,
+  bookId?: string,
+  seriesId?: string,
+  properties: Record<string, string>[],
+}
+```
 
-## Data Structures
-
-
+### BookPushedToKindleSuccess (Backend - Current)
 ```kotlin
-package org.gotson.komga.infrastructure.web
-
-import org.springframework.context.annotation.Configuration
-import org.springframework.http.CacheControl
-import org.springframework.web.method.support.HandlerMethodArgumentResolver
-import org.springframework.web.servlet.config.annotation.InterceptorRegistry
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
-import org.springframework.web.servlet.mvc.WebContentInterceptor
-import java.util.concurrent.TimeUnit
-
-@Configuration
-class WebMvcConfiguration : WebMvcConfigurer {
-  override fun addResourceHandlers(registry: ResourceHandlerRegistry) {
-    if (!registry.hasMappingForPattern("/webjars/**")) {
-      registry
-        .addResourceHandler("/webjars/**")
-        .addResourceLocations("classpath:/META-INF/resources/webjars/")
-    }
-
-    if (!registry.hasMappingForPattern("/swagger-ui.html**")) {
-      registry
-        .addResourceHandler("/swagger-ui.html**")
-        .addResourceLocations("classpath:/META-INF/resources/")
-    }
-
-    registry
-      .addResourceHandler(
-        "/index.html",
-        "/favicon.ico",
-        "/favicon-16x16.png",
-        "/favicon-32x32.png",
-        "/mstile-144x144.png",
-        "/apple-touch-icon.png",
-        "/apple-touch-icon-180x180.png",
-        "/android-chrome-192x192.png",
-        "/android-chrome-512x512.png",
-        "/manifest.json",
-      ).addResourceLocations("classpath:public/")
-      .setCacheControl(CacheControl.noStore())
-
-    listOf("css", "fonts", "img", "js")
-      .forEach {
-        registry
-          .addResourceHandler("/$it/**")
-          .addResourceLocations("classpath:public/$it/")
-          .setCacheControl(CacheControl.maxAge(365, TimeUnit.DAYS).cachePublic())
-      }
-  }
-
-  override fun addInterceptors(registry: InterceptorRegistry) {
-    registry.addInterceptor(
-      WebContentInterceptor().apply {
-        addCacheMapping(
-          cachePrivate,
-          "/api/**",
-          "/opds/**",
-        )
-      },
-    )
-  }
-
-  override fun addArgumentResolvers(resolvers: MutableList<HandlerMethodArgumentResolver>) {
-    resolvers.add(AuthorsHandlerMethodArgumentResolver())
-    resolvers.add(DelimitedPairHandlerMethodArgumentResolver())
-  }
-}
-
-```
-### URL Configuration Structure
-```typescript
-interface Urls {
-  origin: string        // Full URL with trailing slash
-  originNoSlash: string // Full URL without trailing slash  
-  base: string          // Base path with trailing slash
-  baseNoSlash: string   // Base path without trailing slash
-}
+class BookPushedToKindleSuccess(
+  book: Book,
+  series: Series,
+  kindlePath: String,
+) : HistoricalEvent(
+  type = "BookPushedToKindleSuccess",
+  bookId = book.id,
+  seriesId = series.id,
+  properties = mapOf(
+    "name" to book.path.toString(),
+    "series" to series.name,
+    "kindle_path" to kindlePath,
+  ),
+)
 ```
 
-### Router Configuration
-```typescript
-const router = new Router({
-  mode: 'history',
-  base: urls.base,  // Dynamic base path
-  routes: [
-    {
-      path: '/book/:bookId/read',
-      name: 'read-book',
-      component: () => import('./views/DivinaReader.vue'),
-      props: (route) => ({bookId: route.params.bookId}),
-    },
-    // ... other routes
-  ]
-})
+### BookPushedToKindleSuccess (Backend - Updated)
+```kotlin
+class BookPushedToKindleSuccess(
+  book: Book,
+  series: Series,
+  kindlePath: String,
+  processingTimeSeconds: Long,
+) : HistoricalEvent(
+  type = "BookPushedToKindleSuccess",
+  bookId = book.id,
+  seriesId = series.id,
+  properties = mapOf(
+    "name" to book.path.toString(),
+    "series" to series.name,
+    "kindle_path" to kindlePath,
+    "processing_time_seconds" to processingTimeSeconds.toString(),
+  ),
+)
 ```
 
-## Expected Output
-After implementing the fix, users should be able to:
-1. Access Komga directly via IP:PORT (e.g., `<ip>:25600/book/0KD1JKYHXH0XG/read`) without getting "No mapping for GET" errors
-2. Load all JavaScript and CSS assets correctly
-3. Navigate through all routes including book reading, series browsing, and admin pages
-4. Have consistent behavior between development and production environments
+## 5. Expected Output
 
-## Required Changes
-The fix needs to address the base path configuration in the Vue.js application to properly handle direct IP:PORT access in Docker environments. This involves updating the URL configuration logic and ensuring the router and webpack public path are properly synchronized.
+### Frontend Display
+When users view the history details for a successful Kindle push, they should see:
+
+```
+Type: Book pushed to Kindle
+Name: /path/to/book.cbz
+Series: Series Name
+Kindle Path: New Volume
+Processing Time: 45 seconds
+Timestamp: 2025-01-15 14:30:25
+```
+
+### Script Output
+The Python script should output processing time in a structured format:
+```
+HISTORICAL_EVENT_KINDLE_PATH:New Volume
+HISTORICAL_EVENT_PROCESSING_TIME:45
+SCRIPT_STATUS:SUCCESS
+```
+
+### Backend Event Creation
+The controller should parse the processing time and create the historical event with the timing information included.
+
+## Implementation Notes
+
+1. **Timing Measurement**: Processing time should be measured from the start of script execution until completion, covering file processing, KCC conversion, and SCP transfer.
+
+2. **Error Handling**: If timing measurement fails, the system should still function normally but without processing time data.
+
+3. **Backward Compatibility**: The changes should be backward compatible. Historical events created without processing time should still display properly.
+
+4. **Unit Formatting**: Processing time should be displayed in seconds with appropriate formatting (e.g., "45 seconds" for times under 60 seconds, "1 minute 5 seconds" for longer times).
+
+5. **Data Validation**: The backend should validate that the processing time is a reasonable number (positive, not excessively large).
