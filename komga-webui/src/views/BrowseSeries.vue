@@ -1132,23 +1132,24 @@ export default Vue.extend({
           })
         })
     },
-    pushSelectedToKindle() {
-      this.selectedBooks.forEach(book => {
-        this.$komgaBooks.pushToKindle(book.id)
-          .then(() => {
-            this.$store.dispatch('snackbar/show', {
-              message: `Book '${book.metadata.title}' has been sent to Kindle`,
-              color: 'success',
-            })
+    async pushSelectedToKindle() {
+      const booksToProcess = [...this.selectedBooks]
+      this.selectedBooks = [] // Clear selection immediately for better UX
+
+      for (const book of booksToProcess) {
+        try {
+          await this.$komgaBooks.pushToKindle(book.id)
+          this.$store.dispatch('snackbar/show', {
+            message: `Book '${book.metadata.title}' has been sent to Kindle`,
+            color: 'success',
           })
-          .catch(e => {
-            this.$store.dispatch('snackbar/show', {
-              message: e.message,
-              color: 'error',
-            })
+        } catch (e) {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
           })
-      })
-      this.selectedBooks = []
+        }
+      }
     },
     bulkEditMultipleBooks() {
       this.$store.dispatch('dialogUpdateBulkBooks', this.$_.sortBy(this.selectedBooks, ['metadata.numberSort']))

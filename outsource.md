@@ -1,220 +1,98 @@
-# Push To Kindle Progress Page - Technical Specification
+# Komga Frontend Routing Bug Analysis and Fix
 
 ## Goal
+Fix the "No mapping for GET" errors when accessing Komga URLs directly via IP address (e.g., `<ip>/book/0KD1JKYHXH0XG/read`). The issue occurs in a Docker environment without reverse proxy where users access Komga directly via IP:PORT.
 
-Add a new page to the Komga web interface that displays log output from the push_to_kindle.py script. This page should be accessible from the sidebar navigation as a subcategory of History. The existing History page should be renamed to "Scan History" and both should be organized under a History menu in the sidebar.
+### Error Log
+```
+komga-kindle-1  | 2025-10-12T06:51:46.533-04:00  WARN 1 --- [io-25600-exec-3] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/read
+komga-kindle-1  | 2025-10-12T06:51:46.615-04:00  WARN 1 --- [io-25600-exec-1] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/js/chunk-vendors.3366e51a.js
+komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-6] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/css/app.c113e1ad.css
+komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-7] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/js/app.c8577053.js
+komga-kindle-1  | 2025-10-12T06:51:46.619-04:00  WARN 1 --- [io-25600-exec-4] o.s.web.servlet.PageNotFound             : No mapping for GET /book/0KD1JKYHXH0XG/css/chunk-vendors.420551a9.css
+```
+
+## Root Cause Analysis
+The issue stems from a mismatch between the Vue.js router base path configuration and how users access the application in a Docker environment. When users access Komga via `<ip>:<port>/`, the Vue.js router expects all routes to be relative to this base path, but the application is not properly configured to handle this scenario.
+
+### Problem Details
+1. **Vue Router Configuration**: The router uses `mode: 'history'` with a dynamic base path determined by `urls.base`
+2. **URL Base Configuration**: The base path is set differently for development (`'/'`) and production (`'./'`)
+3. **Access Pattern**: Users access via `<ip>:<port>/` but the router expects routes to be relative to this path
+4. **Resource Loading**: JavaScript and CSS files are being requested with incorrect paths, causing 404 errors
 
 ## Complete Folder Structure
-
 ```
 komga/
 ├── komga-webui/
 │   ├── src/
+│   │   ├── functions/
+│   │   │   └── urls.ts              # URL configuration and base path logic
+│   │   ├── main.ts                  # Vue.js application entry point
+│   │   ├── router.ts                # Vue.js router configuration
 │   │   ├── views/
-│   │   │   ├── HistoryView.vue (existing - needs to be renamed/modified)
-│   │   │   ├── PushToKindleProgressView.vue (new - needs to be created)
-│   │   │   └── HomeView.vue (existing - needs sidebar modification)
-│   │   ├── router.ts (existing - needs route modification)
-│   │   ├── locales/ (existing - may need translation updates)
-│   │   ├── services/ (existing - may need new service for logs)
-│   │   └── types/ (existing - may need new type definitions)
-│   └── public/
-└── komga/
-    └── src/
-        └── main/
-            └── kotlin/
-                └── org/
-                    └── gotson/
-                        └── komga/
-                            └── interfaces/
-                                └── api/
-                                    └── rest/
-                                        ├── BookController.kt (existing - needs modification for log capture)
-                                        ├── SeriesController.kt (existing - needs modification for log capture)
-                                        └── KindleLogController.kt (new - needs to be created)
+│   │   │   ├── PageNotFound.vue     # 404 page component
+│   │   │   ├── DivinaReader.vue     # Book reader component (for /book/:bookId/read)
+│   │   │   └── EpubReader.vue       # EPUB reader component (for /book/:bookId/read-epub)
+│   │   └── public-path.js           # Webpack public path configuration
+│   └── vue.config.js                # Vue CLI configuration
+└── komga/src/main/kotlin/org/gotson/komga/
+    └── infrastructure/web/
+        └── WebMvcConfiguration.kt    # Spring Boot resource handling configuration
 ```
 
-## Source Code
+## Source Code Files Analysis
 
-### Frontend Files
+### File: komga-webui/src/functions/urls.ts
+This file contains the URL configuration logic that determines the base path for the Vue.js router. The current implementation uses `window.resourceBaseUrl` which may not be properly set in the Docker environment.
 
-#### File: komga-webui/src/views/HistoryView.vue
-- **Current Purpose**: Displays historical events (book deletions, imports, etc.)
-- **Required Changes**: 
-  - Rename to "ScanHistoryView.vue"
-  - Update component name to "ScanHistoryView"
-  - Update all references to match new name
-  - Modify page title and headers to display "Scan History"
+### File: komga-webui/src/router.ts
+Contains the Vue.js router configuration with history mode and route definitions. The router uses the `urls.base` configuration as its base path.
 
-#### File: komga-webui/src/views/PushToKindleProgressView.vue (NEW)
-- **Purpose**: Display log output from push_to_kindle.py script
-- **Requirements**:
-  - Display logs in a scrollable text area with monospace font
-  - Auto-refresh logs every 5 seconds
-  - Show timestamp for each log entry
-  - Include manual refresh button
-  - Show clear logs button
-  - Display loading indicator while fetching logs
-  - Handle error states gracefully
-  - Use Vuetify components for consistent UI
+### File: komga-webui/src/public-path.js
+Configures the webpack public path for asset loading. This is critical for ensuring that JavaScript and CSS files are loaded correctly in different environments.
 
-#### File: komga-webui/src/views/HomeView.vue
-- **Current Purpose**: Main layout with sidebar navigation
-- **Required Changes**:
-  - Modify sidebar navigation structure to create History menu group
-  - Add "Scan History" as first submenu item
-  - Add "Push To Kindle Progress" as second submenu item
-  - Update icons and routing accordingly
-  - Update navigation logic to handle expanded/collapsed state
+### File: komga-webui/src/views/PageNotFound.vue
+The 404 page component that users see when they encounter routing issues.
 
-#### File: komga-webui/src/router.ts
-- **Current Purpose**: Define application routes
-- **Required Changes**:
-  - Update route for HistoryView to point to ScanHistoryView
-  - Add new route for PushToKindleProgressView
-  - Update route names and paths accordingly
-  - Ensure admin guards are properly applied
-
-#### File: komga-webui/src/services/kindle-log.service.ts (NEW)
-- **Purpose**: Handle API communication for Kindle logs
-- **Requirements**:
-  - Method to fetch logs from backend API
-  - Method to clear logs from backend API
-  - Proper error handling and typing
-  - Axios-based HTTP client integration
-
-### Backend Files
-
-#### File: komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/BookController.kt
-- **Current Purpose**: Handle book-related API endpoints
-- **Required Changes**:
-  - Modify pushToKindle method to capture and store logs
-  - Add unique job ID for each push operation
-  - Store logs in memory or temporary storage
-  - Return job ID in response
-
-#### File: komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/SeriesController.kt
-- **Current Purpose**: Handle series-related API endpoints
-- **Required Changes**:
-  - Modify pushToKindle method to capture and store logs
-  - Add unique job ID for each push operation
-  - Store logs in memory or temporary storage
-  - Return job ID in response
-
-#### File: komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/KindleLogController.kt (NEW)
-- **Purpose**: Handle Kindle log-related API endpoints
-- **Requirements**:
-  - GET endpoint to retrieve logs by job ID
-  - GET endpoint to list all recent jobs
-  - DELETE endpoint to clear logs
-  - Proper error handling and response formatting
-  - Admin-only access restriction
-  - Log storage management (cleanup old logs)
+### File: komga/src/main/kotlin/org/gotson/komga/infrastructure/web/WebMvcConfiguration.kt
+Spring Boot configuration for serving static resources. This handles serving the built Vue.js application and static assets.
 
 ## Data Structures
 
-### Frontend Types
-
+### URL Configuration Structure
 ```typescript
-// komga-webui/src/types/kindle-log.ts
-interface KindleLogEntry {
-  timestamp: string;
-  level: 'INFO' | 'ERROR' | 'DEBUG' | 'WARNING';
-  message: string;
-  jobId: string;
-}
-
-interface KindleJob {
-  id: string;
-  type: 'BOOK' | 'SERIES';
-  targetId: string;
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED';
-  startTime: string;
-  endTime?: string;
-  logEntries: KindleLogEntry[];
-}
-
-interface KindleLogResponse {
-  jobs: KindleJob[];
-  totalElements: number;
+interface Urls {
+  origin: string        // Full URL with trailing slash
+  originNoSlash: string // Full URL without trailing slash  
+  base: string          // Base path with trailing slash
+  baseNoSlash: string   // Base path without trailing slash
 }
 ```
 
-### Backend DTOs
-
-```kotlin
-// komga/src/main/kotlin/org/gotson/komga/interfaces/api/rest/dto/KindleLogDto.kt
-data class KindleLogEntryDto(
-  val timestamp: Instant,
-  val level: LogLevel,
-  val message: String,
-  val jobId: String
-)
-
-data class KindleJobDto(
-  val id: String,
-  val type: JobType,
-  val targetId: String,
-  val status: JobStatus,
-  val startTime: Instant,
-  val endTime: Instant?,
-  val logEntries: List<KindleLogEntryDto>
-)
-
-data class KindleLogResponseDto(
-  val jobs: List<KindleJobDto>,
-  val totalElements: Int
-)
-
-enum class LogLevel {
-  INFO, ERROR, DEBUG, WARNING
-}
-
-enum class JobType {
-  BOOK, SERIES
-}
-
-enum class JobStatus {
-  RUNNING, COMPLETED, FAILED
-}
+### Router Configuration
+```typescript
+const router = new Router({
+  mode: 'history',
+  base: urls.base,  // Dynamic base path
+  routes: [
+    {
+      path: '/book/:bookId/read',
+      name: 'read-book',
+      component: () => import('./views/DivinaReader.vue'),
+      props: (route) => ({bookId: route.params.bookId}),
+    },
+    // ... other routes
+  ]
+})
 ```
 
 ## Expected Output
+After implementing the fix, users should be able to:
+1. Access Komga directly via IP:PORT (e.g., `<ip>:25600/book/0KD1JKYHXH0XG/read`) without getting "No mapping for GET" errors
+2. Load all JavaScript and CSS assets correctly
+3. Navigate through all routes including book reading, series browsing, and admin pages
+4. Have consistent behavior between development and production environments
 
-### 1. Modified Sidebar Navigation
-- History menu group with two sub-items:
-  - "Scan History" (renamed from original History)
-  - "Push To Kindle Progress" (new)
-
-### 2. Push To Kindle Progress Page UI
-- Page title: "Push To Kindle Progress"
-- Auto-refreshing log display with:
-  - Monospace font for log text
-  - Color-coded log levels (INFO=blue, ERROR=red, DEBUG=gray, WARNING=orange)
-  - Timestamps for each entry
-  - Scrollable container for long logs
-- Action buttons:
-  - Refresh (manual refresh)
-  - Clear Logs (with confirmation dialog)
-- Loading indicator during API calls
-- Error message display when API calls fail
-
-### 3. Backend API Endpoints
-- `GET /api/v1/kindle-logs` - Retrieve all recent Kindle jobs with logs
-- `GET /api/v1/kindle-logs/{jobId}` - Retrieve specific job logs
-- `DELETE /api/v1/kindle-logs` - Clear all logs
-- `POST /api/v1/books/{bookId}/push-to-kindle` - Modified to return job ID
-- `POST /api/v1/series/{seriesId}/push-to-kindle` - Modified to return job ID
-
-### 4. Log Capture and Storage
-- Real-time log capture from push_to_kindle.py script execution
-- Temporary storage of logs with automatic cleanup
-- Unique job identification for tracking multiple operations
-- Proper error handling and log level classification
-
-### 5. User Experience
-- Seamless navigation between Scan History and Push To Kindle Progress
-- Real-time log updates without page refresh
-- Clear visual indication of operation status
-- Responsive design that works on all screen sizes
-- Consistent with existing Komga UI patterns
+## Required Changes
+The fix needs to address the base path configuration in the Vue.js application to properly handle direct IP:PORT access in Docker environments. This involves updating the URL configuration logic and ensuring the router and webpack public path are properly synchronized.

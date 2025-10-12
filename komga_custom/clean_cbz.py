@@ -263,7 +263,7 @@ def clean_cbz(file_path: str, remove_watermarks: bool = True) -> str:
                         try:
                             # Process the image to remove watermarks
                             processed_data = process_image_for_watermarks(file_data)
-                            z_out.writestr(filename.replace('_', '-'), processed_data)
+                            z_out.writestr(filename.replace('_', '+'), processed_data)
                         except Exception as e:
                             print(f"Failed to process image {filename}: {e}")
                             # Fall back to original image if processing fails
