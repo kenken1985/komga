@@ -442,17 +442,22 @@ def main():
     start_time = time.time()
 
     # Determine target folder based on number of files
-    target_folder = "New"
-    if len(file_paths) > 1:
-        # For multiple files, try to extract series name from first file
+    target_folder = "New" # Default
+    if file_paths:
+        # Always try to extract series name from the first file path.
+        # This ensures that when the script is called with a single book
+        # (from either BookController or the new SeriesController loop),
+        # it still attempts to place it in the correct series folder.
         series_name = extract_series_name_from_path(file_paths[0])
         if series_name:
             target_folder = series_name
-            print(f"Multiple files detected, using series folder: {target_folder}")
+            print(f"Determined series folder: {target_folder}")
         else:
-            print("Multiple files detected but couldn't determine series, using 'New' folder")
+            print("Could not determine series folder, using 'New' folder")
     else:
-        print("Single file detected, using 'New' folder")
+        print("SCRIPT_ERROR_MESSAGE:No file paths provided.")
+        sys.exit(1)
+
 
     # Create the target folder on Kindle
     print("SCRIPT_STATUS:CREATING_FOLDER")
@@ -467,6 +472,9 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     all_success = True
+    # This loop will now typically only run once per script execution,
+    # as the new SeriesController calls it for each book.
+    # However, it still supports multiple paths for backward compatibility.
     for file_path in file_paths:
         print(f"--- Processing file: {file_path} ---")
         print(f"FILE_STATUS:PROCESSING")

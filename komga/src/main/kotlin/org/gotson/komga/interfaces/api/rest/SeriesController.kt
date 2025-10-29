@@ -893,67 +893,57 @@ class SeriesController(
 
     val books = bookRepository.findAllBySeriesId(seriesId)
 
-    val bookPaths = books.map { it.url.path }
-
-    if (bookPaths.isEmpty()) {
+    if (books.isEmpty()) {
       throw ResponseStatusException(HttpStatus.NOT_FOUND, "No books in series")
     }
 
     val series = seriesRepository.findByIdOrNull(seriesId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
 
-    // Create initialization events for each book in the series
+    // Process each book individually
     books.forEach { book ->
-      historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
-    }
-    logger.info { "[push_to_kindle] Created initialization events for series: $seriesId, books: ${books.size}" }
-
-    try {
-      val command = mutableListOf("python3", "/app/komga_custom/push_to_kindle.py")
-      command.addAll(bookPaths)
-      val processBuilder = ProcessBuilder(command)
-      processBuilder.redirectErrorStream(true)
-      val process = processBuilder.start()
-      val reader = process.inputStream.bufferedReader()
-      val output = reader.readText()
-      logger.info { "Push to kindle script output: $output" }
-      val exitCode = process.waitFor()
+      logger.info { "[push_to_kindle] Processing book: ${book.id} in series: $seriesId" }
       
-      if (exitCode == 0) {
-        // Parse Kindle path and processing time from output
-        val kindlePath = extractKindlePathFromOutput(output)
-        val processingTime = extractProcessingTimeFromOutput(output)
-        if (kindlePath != null) {
-          // Create success events for each book in the series
-          books.forEach { book ->
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath, processingTime))
-          }
-          logger.info { "[push_to_kindle] Successfully created success events for series: $seriesId, Kindle path: $kindlePath, Processing time: ${processingTime}s, books: ${books.size}" }
+      // Create initialization event for each book as it starts processing
+      historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
+      logger.info { "[push_to_kindle] Created initialization event for book: ${book.id}" }
+
+      try {
+        // Call the Python script for each book individually
+        val command = mutableListOf("python3", "/app/komga_custom/push_to_kindle.py", book.url.path)
+        val processBuilder = ProcessBuilder(command)
+        processBuilder.redirectErrorStream(true)
+        val process = processBuilder.start()
+        val reader = process.inputStream.bufferedReader()
+        val output = reader.readText()
+        logger.info { "Push to kindle script output for book ${book.id}: $output" }
+        val exitCode = process.waitFor()
+        
+        if (exitCode == 0) {
+          // Parse Kindle path and processing time from output
+          val kindlePath = extractKindlePathFromOutput(output)
+          val processingTime = extractProcessingTimeFromOutput(output)
+          
+          // Create success event for this specific book
+          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath ?: "", processingTime))
+          logger.info { "[push_to_kindle] Successfully created success event for book: ${book.id}, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
         } else {
-          logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for series: $seriesId" }
-          // Create success events even without kindle path
-          books.forEach { book ->
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, "", processingTime))
-          }
-        }
-      } else {
-        // Script failed - parse error from output
-        val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
-        logger.error { "[push_to_kindle] Script failed for series: $seriesId, exit code: $exitCode, error: $errorMessage" }
-        // Create failure events for each book in the series
-        books.forEach { book ->
+          // Script failed for this book - parse error from output
+          val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
+          logger.error { "[push_to_kindle] Script failed for book: ${book.id}, exit code: $exitCode, error: $errorMessage" }
+          
+          // Create failure event for this specific book
           historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
         }
-        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed: $errorMessage")
-      }
-    } catch (e: Exception) {
-      logger.error(e) { "Error while executing push to kindle script for series: $seriesId" }
-      // Create failure events for each book in the series
-      val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
-      books.forEach { book ->
+      } catch (e: Exception) {
+        // Catch exceptions during script execution for this book
+        logger.error(e) { "Error while executing push to kindle script for book: ${book.id}" }
+        
+        // Create failure event for this specific book
+        val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
         historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
       }
-      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script: $errorMessage")
     }
+    logger.info { "[push_to_kindle] Finished processing all books for series: $seriesId" }
   }
 
   private fun extractKindlePathFromOutput(output: String): String? {
