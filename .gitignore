@@ -1,6 +1,6 @@
 ### Gradle
-.gradle
-!gradle/wrapper/gradle-wrapper.jar
+#.gradle
+#!gradle/wrapper/gradle-wrapper.jar
 
 ### Kotlin
 .kotlin
@@ -18,13 +18,13 @@ outsource_source_code.md
 **/locales/
 **/docs/
 .github/
-.gradle/
+#.gradle/
 .idea/
 **/.ipynb_checkpoints/
 .kilocode/
 .pytest_cache/
 **/build/
-**/gradle/
+#**/gradle/
 **/res/
 **/test*/
 **/venv/
@@ -82,7 +82,7 @@ build/
 nbbuild/
 dist/
 nbdist/
-.nb-gradle/
+#.nb-gradle/
 
 ### Komga
 /komga/src/main/resources/public/
