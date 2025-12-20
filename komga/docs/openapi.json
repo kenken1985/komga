@@ -7,7 +7,7 @@
       "url": "https://github.com/gotson/komga/blob/master/LICENSE"
     },
     "title": "Komga API",
-    "version": "1.23.1"
+    "version": "1.23.6"
   },
   "externalDocs": {
     "description": "Komga documentation",
@@ -4919,7 +4919,7 @@
         "operationId": "matchComicRackList",
         "requestBody": {
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "properties": {
@@ -10313,6 +10313,9 @@
           "bookId": {
             "type": "string"
           },
+          "id": {
+            "type": "string"
+          },
           "properties": {
             "type": "object",
             "additionalProperties": {
@@ -10331,6 +10334,7 @@
           }
         },
         "required": [
+          "id",
           "properties",
           "timestamp",
           "type"
@@ -13082,7 +13086,9 @@
             "type": "boolean"
           },
           "kepubifyPath": {
-            "type": "string"
+            "type": "string",
+            "deprecated": true,
+            "description": "Will be removed in a future version"
           },
           "koboPort": {
             "type": "integer",

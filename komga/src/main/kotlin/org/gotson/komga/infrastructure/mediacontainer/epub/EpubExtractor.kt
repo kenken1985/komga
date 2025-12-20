@@ -60,14 +60,14 @@ class EpubExtractor(
         manifest.values.firstOrNull { it.properties.contains("cover-image") }
           ?: // EPUB 2 - get cover from meta element with name="cover"
           opfDoc
-            .selectFirst("metadata > meta[name=cover]")
+            .selectFirst("*|metadata > *|meta[name=cover]")
             ?.attr("content")
             ?.ifBlank { null }
             ?.let { manifest[it] }
           ?: // try id="cover-image"
           manifest.values.firstOrNull { it.id == "cover-image" }
       if (coverManifestItem != null) {
-        val href = coverManifestItem.href
+        val href = URLDecoder.decode(coverManifestItem.href, Charsets.UTF_8)
         val mediaType = coverManifestItem.mediaType
         val coverPath = normalizeHref(opfDir, href)
         zip.getEntryBytes(coverPath)?.let { coverBytes ->
@@ -84,7 +84,7 @@ class EpubExtractor(
   fun getResources(epub: EpubPackage): List<MediaFile> {
     val spine =
       epub.opfDoc
-        .select("spine > itemref")
+        .select("*|spine > *|itemref")
         .map { it.attr("idref") }
         .mapNotNull { epub.manifest[it] }
 
@@ -126,7 +126,7 @@ class EpubExtractor(
       run {
         val spine =
           epub.opfDoc
-            .select("spine > itemref")
+            .select("*|spine > *|itemref")
             .map { it.attr("idref") }
             .mapNotNull { idref -> epub.manifest[idref]?.href?.let { normalizeHref(epub.opfDir, it) } }
 
@@ -137,7 +137,7 @@ class EpubExtractor(
 
     val pagesWithImages =
       epub.opfDoc
-        .select("spine > itemref")
+        .select("*|spine > *|itemref")
         .map { it.attr("idref") }
         .mapNotNull { idref -> epub.manifest[idref]?.href?.let { normalizeHref(epub.opfDir, it) } }
         .map { pagePath ->
@@ -219,7 +219,7 @@ class EpubExtractor(
   fun computePageCount(epub: EpubPackage): Int {
     val spine =
       epub.opfDoc
-        .select("spine > itemref")
+        .select("*|spine > *|itemref")
         .map { it.attr("idref") }
         .mapNotNull { idref -> epub.manifest[idref]?.href?.let { normalizeHref(epub.opfDir, it) } }
 
@@ -230,8 +230,8 @@ class EpubExtractor(
   }
 
   fun isFixedLayout(epub: EpubPackage) =
-    epub.opfDoc.selectFirst("metadata > *|meta[property=rendition:layout]")?.text() == "pre-paginated" ||
-      epub.opfDoc.selectFirst("metadata > *|meta[name=fixed-layout]")?.attr("content") == "true"
+    epub.opfDoc.selectFirst("*|metadata > *|meta[property=rendition:layout]")?.text() == "pre-paginated" ||
+      epub.opfDoc.selectFirst("*|metadata > *|meta[name=fixed-layout]")?.attr("content") == "true"
 
   fun computePositions(
     epub: EpubPackage,
