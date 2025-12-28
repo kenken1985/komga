@@ -1,32 +1,24 @@
+version: '3.8'
 services:
-  komga-kindle-dev:
+  komga:
     build:
       context: .
       dockerfile: Dockerfile
-#    image: komga-kindle:latest
-    image: komga-kindle:dev
+    container_name: komga_test
+    image: komga-kindle:latest
     ports:
       - "25601:25600"
-      # Progress app runs internally on port 5001, no host mapping to avoid conflicts
     volumes:
-      # Config Folder
-       - type: bind
-         source: /mnt/dockerHDD/opt/komga
-         target: /config
-      # Library Folder      
-       - type: bind
-         source: /mnt/mainHDD
-         target: /data
-
-    env_file:
-      - .env
+      - ./config:/config
+      - ./libraries:/libraries
+      - ./cache:/cache
     environment:
-#      - KOMGA_LIBRARIES_PATHS=/data
-      - SPRING_PROFILES_ACTIVE=prod
-      # Kindle configuration - adjust as needed
-      - KINDLE_IP=${KINDLE_IP}
-      - KINDLE_USER=${KINDLE_USER}
-      - KINDLE_REMOTE_PATH=${KINDLE_REMOTE_PATH}
-      - KINDLE_SSH_PASSWORD=${KINDLE_SSH_PASSWORD}
-      - KINDLE_SSH_PORT=${KINDLE_SSH_PORT}
+      - KOMGA_CONFIGDIR=/config
+      - SPRING_PROFILES_ACTIVE=docker
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:25600/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

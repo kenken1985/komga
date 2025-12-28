@@ -5,6 +5,8 @@
 ### Kotlin
 .kotlin
 
+*.zip
+
 *.jpg
 *.cbz
 *.md

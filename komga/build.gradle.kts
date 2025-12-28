@@ -236,6 +236,7 @@ tasks {
       expand(project.properties)
     }
     mustRunAfter(getByName("prepareThymeLeaf"))
+    mustRunAfter("generateGitProperties")
   }
 
   register<Test>("benchmark") {
