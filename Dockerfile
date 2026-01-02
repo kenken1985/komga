@@ -92,6 +92,7 @@ RUN apt-get update && \
         python3-slugify \
         p7zip-full \
         sshpass \
+        openssh-client \
         tesseract-ocr \
         tesseract-ocr-eng \
         libopencv-dev \
