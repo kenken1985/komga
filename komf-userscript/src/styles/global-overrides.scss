@@ -1,0 +1,30 @@
+.bg-dark {
+  background: var(--bs-body-bg) !important;
+}
+
+.bg-primary {
+  --bs-bg-opacity: 1;
+  background-color: rgba(var(--bs-primary-rgb), var(--bs-bg-opacity)) !important;
+}
+
+body {
+  font-size: unset;
+}
+
+.hidden {
+  display: unset !important;
+}
+
+.q-item.row {
+  margin: 0;
+}
+
+.col {
+  width: unset !important;
+  min-width: unset !important;
+}
+
+
+.text-accent {
+  color: unset !important;
+}
