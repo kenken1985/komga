@@ -234,4 +234,16 @@ export default class KomgaSeriesService {
       throw new Error(msg)
     }
   }
+
+  async triggerUpdate(seriesId: string) {
+    try {
+      await this.http.post(`${API_SERIES}/${seriesId}/trigger-update`)
+    } catch (e) {
+      let msg = `An error occurred while trying to trigger update for series '${seriesId}'`
+      if (e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
 }

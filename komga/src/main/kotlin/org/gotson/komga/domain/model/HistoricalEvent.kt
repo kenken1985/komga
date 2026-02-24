@@ -138,4 +138,16 @@ sealed class HistoricalEvent(
         "error" to error,
       ),
   )
+
+  class SeriesUpdateTriggered(
+    series: Series,
+  ) : HistoricalEvent(
+    type = "SeriesUpdateTriggered",
+    seriesId = series.id,
+    properties =
+      mapOf(
+        "name" to series.name,
+        "library_id" to series.libraryId,
+      ),
+  )
 }

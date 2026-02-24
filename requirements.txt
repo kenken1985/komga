@@ -4,7 +4,7 @@ Pillow>=11.3.0
 # KCC (Kindle Comic Converter) dependencies
 PySide6>=6.5.1
 psutil>=5.9.5
-requests>=2.31.0
+requests>=2.31.0  # Used by trigger_update.py for Automaga API calls
 python-slugify>=1.2.1
 raven>=6.0.0
 packaging>=23.2

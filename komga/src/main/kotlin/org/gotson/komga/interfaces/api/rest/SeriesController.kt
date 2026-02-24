@@ -1005,4 +1005,45 @@ class SeriesController(
     }
     return 0L // Default to 0 if not found
   }
+
+  @PostMapping("v1/series/{seriesId}/trigger-update")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun triggerUpdate(
+    @PathVariable seriesId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    logger.info { "[trigger_update] Update requested from WebUI for series: $seriesId. Starting..." }
+
+    principal.user.checkContentRestriction(seriesId)
+
+    val series = seriesRepository.findByIdOrNull(seriesId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+    
+    // Log the event that the update was triggered
+    historicalEventRepository.insert(HistoricalEvent.SeriesUpdateTriggered(series))
+    logger.info { "[trigger_update] Created historical event for update triggered for series: ${series.metadata.title}" }
+    
+    try {
+      // Determine media type based on library ID
+      val libraryId = series.libraryId
+
+      // Call the Python script to trigger the update
+      val command = mutableListOf("python3", "/app/komga_custom/trigger_update.py", series.metadata.title, libraryId)
+      val processBuilder = ProcessBuilder(command)
+      processBuilder.redirectErrorStream(true)
+      val process = processBuilder.start()
+      val reader = process.inputStream.bufferedReader()
+      val output = reader.readText()
+      val exitCode = process.waitFor()
+      
+      if (exitCode == 0) {
+        logger.info { "[trigger_update] Successfully triggered update for series: ${series.metadata.title}, library: $libraryId}
+      } else {
+        logger.error { "[trigger_update] Failed to trigger update for series: ${series.metadata.title}, exit code: $exitCode, output: $output" }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to trigger update: $output")
+      }
+    } catch (e: Exception) {
+      logger.error(e) { "Error while executing trigger update script for series: ${series.metadata.title}" }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error triggering update: ${e.message}")
+    }
+  }
 }

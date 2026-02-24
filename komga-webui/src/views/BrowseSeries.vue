@@ -204,6 +204,15 @@
                   </v-btn>
                 </v-col>
                 <v-col cols="auto">
+                  <v-btn title="Update"
+                         small
+                         @click="triggerUpdate"
+                         :disabled="!canDownload">
+                    <v-icon left small>mdi-refresh</v-icon>
+                    UPDATE
+                  </v-btn>
+                </v-col>
+                <v-col cols="auto">
                   <v-btn title="Push to Kindle"
                          small
                          @click="pushToKindle"
@@ -272,6 +281,15 @@
                    :href="fileUrl">
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
+            </v-btn>
+          </v-col>
+          <v-col cols="auto">
+            <v-btn title="Trigger Update"
+                   small
+                   @click="triggerUpdate"
+                   :disabled="!canDownload">
+              <v-icon left small>mdi-refresh</v-icon>
+              UPDATE
             </v-btn>
           </v-col>
           <v-col cols="auto">
@@ -1179,6 +1197,21 @@ export default Vue.extend({
         this.$komgaCollections.deleteCollection(col!.id)
       else
         this.$komgaCollections.patchCollection(col!.id, modified)
+    },
+    triggerUpdate() {
+      this.$komgaSeries.triggerUpdate(this.seriesId)
+        .then(() => {
+          this.$store.dispatch('snackbar/show', {
+            message: 'Series update has been triggered successfully',
+            color: 'success',
+          })
+        })
+        .catch(e => {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
+          })
+        })
     },
   },
 })
