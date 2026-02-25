@@ -1020,14 +1020,14 @@ class SeriesController(
     
     // Log the event that the update was triggered
     historicalEventRepository.insert(HistoricalEvent.SeriesUpdateTriggered(series))
-    logger.info { "[trigger_update] Created historical event for update triggered for series: ${series.metadata.title}" }
+    logger.info { "[trigger_update] Created historical event for update triggered for series: ${series.name}" }
     
     try {
       // Determine media type based on library ID
       val libraryId = series.libraryId
 
       // Call the Python script to trigger the update
-      val command = mutableListOf("python3", "/app/komga_custom/trigger_update.py", series.metadata.title, libraryId)
+      val command = mutableListOf("python3", "/app/komga_custom/trigger_update.py", series.name, libraryId)
       val processBuilder = ProcessBuilder(command)
       processBuilder.redirectErrorStream(true)
       val process = processBuilder.start()
@@ -1036,13 +1036,13 @@ class SeriesController(
       val exitCode = process.waitFor()
       
       if (exitCode == 0) {
-        logger.info { "[trigger_update] Successfully triggered update for series: ${series.metadata.title}, library: $libraryId}
+        logger.info { "[trigger_update] Successfully triggered update for series: ${series.name}, library: $libraryId" }
       } else {
-        logger.error { "[trigger_update] Failed to trigger update for series: ${series.metadata.title}, exit code: $exitCode, output: $output" }
+        logger.error { "[trigger_update] Failed to trigger update for series: ${series.name}, exit code: $exitCode, output: $output" }
         throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to trigger update: $output")
       }
     } catch (e: Exception) {
-      logger.error(e) { "Error while executing trigger update script for series: ${series.metadata.title}" }
+      logger.error(e) { "Error while executing trigger update script for series: ${series.name}" }
       throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error triggering update: ${e.message}")
     }
   }

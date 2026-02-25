@@ -672,22 +672,21 @@ export default Vue.extend({
     deleteBooks() {
       this.$store.dispatch('dialogDeleteBook', this.selectedBooks)
     },
-    pushSelectedToKindle () {
-      this.selectedBooks.forEach(book => {
-        this.$komgaBooks.pushToKindle(book.id)
-          .then(() => {
-            this.$store.dispatch('snackbar/show', {
-              message: `Book '${book.metadata.title}' has been sent to Kindle`,
-              color: 'success',
-            })
+    async pushSelectedToKindle () {
+      for (const book of this.selectedBooks) {
+        try {
+          await this.$komgaBooks.pushToKindle(book.id)
+          this.$store.dispatch('snackbar/show', {
+            message: `Book '${book.metadata.title}' has been sent to Kindle`,
+            color: 'success',
           })
-          .catch(e => {
-            this.$store.dispatch('snackbar/show', {
-              message: e.message,
-              color: 'error',
-            })
+        } catch (e) {
+          this.$store.dispatch('snackbar/show', {
+            message: `Failed to send '${book.metadata.title}': ${e.message}`,
+            color: 'error',
           })
-      })
+        }
+      }
       this.selectedBooks = []
     },
   },
