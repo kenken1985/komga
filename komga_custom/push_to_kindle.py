@@ -65,7 +65,7 @@ def get_files_list_from_webui() -> List[str]:
 def extract_series_name_from_path(file_path: str) -> str:
     """
     Extract series name from file path by looking for directory structure.
-    Assumes structure: /path/to/library/SeriesName/VolumeName/file.cbz
+    Assumes structure: /path/to/library/SeriesName/file.cbz
     """
     try:
         # Check if the path has the expected structure
@@ -88,11 +88,46 @@ def extract_series_name_from_path(file_path: str) -> str:
         # Check if series name is empty or just dots
         if not series_name or series_name == '.' or series_name == '..':
             return None
-        
+            
         # Clean up series name for Kindle folder
         # Remove special characters, limit length
         clean_name = ''.join(c for c in series_name if c.isalnum() or c in ' -_').strip()
         return clean_name[:100] if clean_name else None  # Increased to 100 characters for full series names
+    except Exception:
+        return None
+
+
+def extract_library_name_from_path(file_path: str) -> str:
+    """
+    Extract library name from file path by looking for directory structure.
+    Assumes structure: /path/to/library/SeriesName/file.cbz
+    """
+    try:
+        # Check if the path has the expected structure
+        if not file_path:
+            return None
+            
+        # Normalize the path
+        normalized_path = os.path.normpath(file_path)
+        
+        # Split the path
+        parts = normalized_path.split(os.sep)
+        
+        # Check if we have at least 3 parts (library, series folder, and file)
+        if len(parts) < 3:
+            return None
+            
+        # Get the library name (third to last part)
+        library_name = parts[-3]
+        
+        # Check if library name is empty or just dots
+        if not library_name or library_name == '.' or library_name == '..':
+            return None
+            
+        # Clean up library name for Kindle folder
+        # Remove special characters, limit length
+        clean_name = ''.join(c for c in library_name if c.isalnum() or c in ' -_').strip()
+        return clean_name[:100] if clean_name else None  # Increased to 100 characters for full library names
     except Exception:
         return None
 
@@ -440,18 +475,25 @@ def main():
     
     # Start timing
     start_time = time.time()
-
-    # Determine target folder based on number of files
+ 
+    # Determine target folder based on library and series name
     target_folder = "New" # Default
     if file_paths:
-        # Always try to extract series name from the first file path.
-        # This ensures that when the script is called with a single book
-        # (from either BookController or the new SeriesController loop),
-        # it still attempts to place it in the correct series folder.
+        # Extract library name and series name from the first file path.
+        # Assumes structure: /path/to/library/SeriesName/file.cbz
+        library_name = extract_library_name_from_path(file_paths[0])
         series_name = extract_series_name_from_path(file_paths[0])
-        if series_name:
+        
+        if library_name and series_name:
+            # Create folder structure: LibraryName/SeriesName
+            target_folder = f"{library_name}/{series_name}"
+            print(f"Determined library folder: {library_name}")
+            print(f"Determined series folder: {series_name}")
+            print(f"Combined target folder: {target_folder}")
+        elif series_name:
+            # Fallback to series only if library name not found
             target_folder = series_name
-            print(f"Determined series folder: {target_folder}")
+            print(f"Could not determine library folder, using series folder only: {target_folder}")
         else:
             print("Could not determine series folder, using 'New' folder")
     else:
