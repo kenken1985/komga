@@ -131,6 +131,7 @@ def extract_library_name_from_path(file_path: str) -> str:
     except Exception:
         return None
 
+
 def is_epub_file(file_path: str) -> bool:
     """
     Check if the file is an EPUB format.

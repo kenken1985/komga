@@ -918,15 +918,19 @@ class SeriesController(
         logger.info { "Push to kindle script output for book ${book.id}: $output" }
         val exitCode = process.waitFor()
         
-        if (exitCode == 0) {
-          // Parse Kindle path and processing time from output
-          val kindlePath = extractKindlePathFromOutput(output)
-          val processingTime = extractProcessingTimeFromOutput(output)
-          
-          // Create success event for this specific book
-          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath ?: "", processingTime))
-          logger.info { "[push_to_kindle] Successfully created success event for book: ${book.id}, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
-        } else {
+         if (exitCode == 0) {
+           // Parse Kindle path and processing time from output
+           val kindlePath = extractKindlePathFromOutput(output)
+           val processingTime = extractProcessingTimeFromOutput(output)
+           
+           // Create success event for this specific book
+           historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath ?: "", processingTime))
+           logger.info { "[push_to_kindle] Successfully created success event for book: ${book.id}, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
+           
+           // Mark book as read after successful push to Kindle
+           bookLifecycle.markReadProgressCompleted(book.id, principal.user)
+           logger.info { "[push_to_kindle] Marked book as read: ${book.id}" }
+         } else {
           // Script failed for this book - parse error from output
           val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
           logger.error { "[push_to_kindle] Script failed for book: ${book.id}, exit code: $exitCode, error: $errorMessage" }

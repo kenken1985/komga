@@ -810,26 +810,34 @@ class BookController(
         logger.info { "Push to kindle script output: $preface$output" }
         val exitCode = process.waitFor()
         
-        if (exitCode == 0) {
-          // Parse Kindle path and processing time from output
-          val kindlePath = extractKindlePathFromOutput(output)
-          val processingTime = extractProcessingTimeFromOutput(output)
-          if (kindlePath != null) {
-            // Create success event for successful push
-            if (series != null) {
-              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath, processingTime))
-            } else {
-              logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping success event" }
-            }
-            logger.info { "[push_to_kindle] Successfully created success event for book: $bookId, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
-          } else {
-            logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
-            // Create success event even without kindle path
-            if (series != null) {
-              historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, "", processingTime))
-            }
-          }
-        } else {
+         if (exitCode == 0) {
+           // Parse Kindle path and processing time from output
+           val kindlePath = extractKindlePathFromOutput(output)
+           val processingTime = extractProcessingTimeFromOutput(output)
+           if (kindlePath != null) {
+             // Create success event for successful push
+             if (series != null) {
+               historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath, processingTime))
+             } else {
+               logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping success event" }
+             }
+             logger.info { "[push_to_kindle] Successfully created success event for book: $bookId, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
+             
+             // Mark book as read after successful push to Kindle
+             bookLifecycle.markReadProgressCompleted(book.id, principal.user)
+             logger.info { "[push_to_kindle] Marked book as read: $bookId" }
+           } else {
+             logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
+             // Create success event even without kindle path
+             if (series != null) {
+               historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, "", processingTime))
+             }
+             
+             // Mark book as read after successful push to Kindle (even without kindle path)
+             bookLifecycle.markReadProgressCompleted(book.id, principal.user)
+             logger.info { "[push_to_kindle] Marked book as read: $bookId" }
+           }
+         } else {
           // Script failed - parse error from output
           val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
           logger.error { "[push_to_kindle] Script failed for book: $bookId, exit code: $exitCode, error: $errorMessage" }
