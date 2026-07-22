@@ -135,7 +135,7 @@ COPY --from=backend-build --chown=1000:1000 \
 
 # ---- Config volume ----
 VOLUME /config
-RUN chown 1000:1000 /config
+RUN mkdir -p /config && chown 1000:1000 /config
 
 # ---- Runtime user ----
 USER ubuntu

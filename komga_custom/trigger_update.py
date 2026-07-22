@@ -12,10 +12,10 @@ def trigger_update(series_name, library_id):
         series_name (str): Name of the series to update
         library_id (str): ID of the library to determine media type
     """
-    # Get AUTOMAGA_URL from environment variable
-    automaga_url = os.environ.get('AUTOMAGA_URL')
-    if not automaga_url:
-        print("Error: AUTOMAGA_URL environment variable not found")
+    # Get AUTOMANGA_URL from environment variable
+    AUTOMANGA_URL = os.environ.get('AUTOMANGA_URL')
+    if not AUTOMANGA_URL:
+        print("Error: AUTOMANGA_URL environment variable not found")
         return False
 
     # Determine media type based on library ID
@@ -28,7 +28,7 @@ def trigger_update(series_name, library_id):
         return False
 
     # Prepare the API endpoint
-    api_endpoint = urljoin(automaga_url, "/api/trigger/manual-update")
+    api_endpoint = urljoin(AUTOMANGA_URL, "/api/trigger/manual-update")
 
     # Prepare the payload
     payload = {
