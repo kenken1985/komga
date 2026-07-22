@@ -467,6 +467,10 @@ def process_with_kcc(book_path: str, output_path: str) -> tuple[bool, str, str]:
         return False, cleaned_cbz_path, os.path.basename(book_path)
 
 def main():
+    # To Test, run in docker container
+    # python3 "/app/komga_custom/push_to_kindle.py" '/data/MANGA/ゴブリンスレイヤー外伝：イヤーワン/ゴブリンスレイヤー外伝：イヤーワン 第01巻.cbz'
+
+
     """
     Main function to process and push files to Kindle with folder organization.
     """
