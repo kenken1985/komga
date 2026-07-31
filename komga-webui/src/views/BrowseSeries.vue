@@ -204,6 +204,15 @@
                   </v-btn>
                 </v-col>
                 <v-col cols="auto">
+                  <v-btn title="Move to Light Novel"
+                         small
+                         @click="moveToLightNovel"
+                         :disabled="!canDownload">
+                    <v-icon left small>mdi-book-arrow-right</v-icon>
+                    TO LIGHT NOVEL
+                  </v-btn>
+                </v-col>
+                <v-col cols="auto">
                   <v-btn title="Update"
                          small
                          @click="triggerUpdate"
@@ -281,6 +290,15 @@
                    :href="fileUrl">
               <v-icon left small>mdi-file-download</v-icon>
               {{ $t('common.download') }}
+            </v-btn>
+          </v-col>
+          <v-col cols="auto">
+            <v-btn title="Move to Light Novel"
+                   small
+                   @click="moveToLightNovel"
+                   :disabled="!canDownload">
+              <v-icon left small>mdi-book-arrow-right</v-icon>
+              MOVE TO LIGHT NOVEL
             </v-btn>
           </v-col>
           <v-col cols="auto">
@@ -1203,6 +1221,21 @@ export default Vue.extend({
         .then(() => {
           this.$store.dispatch('snackbar/show', {
             message: 'Series update has been triggered successfully',
+            color: 'success',
+          })
+        })
+        .catch(e => {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
+          })
+        })
+    },
+    moveToLightNovel() {
+      this.$komgaSeries.moveToLightNovel(this.seriesId)
+        .then(() => {
+          this.$store.dispatch('snackbar/show', {
+            message: 'Series move to Light Novel library initiated successfully',
             color: 'success',
           })
         })

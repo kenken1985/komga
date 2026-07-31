@@ -37,6 +37,7 @@ import org.gotson.komga.domain.model.ThumbnailSeries
 import org.gotson.komga.domain.model.WebLink
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.HistoricalEventRepository
+import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.SeriesCollectionRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -94,6 +95,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
+import java.io.File
 import java.io.OutputStream
 import java.lang.ProcessBuilder
 import java.net.URI
@@ -101,6 +103,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.zip.Deflater
+import kotlin.io.path.toPath
 
 private val logger = KotlinLogging.logger {}
 
@@ -123,6 +126,7 @@ class SeriesController(
   private val imageAnalyzer: ImageAnalyzer,
   private val thumbnailsSeriesRepository: ThumbnailSeriesRepository,
   private val contentRestrictionChecker: ContentRestrictionChecker,
+  private val libraryRepository: LibraryRepository,
 ) {
   @Operation(summary = "List series", description = "Use POST /api/v1/series/list instead. Deprecated since 1.19.0.", tags = [OpenApiConfiguration.TagNames.SERIES, OpenApiConfiguration.TagNames.DEPRECATED])
   @Deprecated("use /v1/series/list instead")
@@ -1048,6 +1052,56 @@ class SeriesController(
     } catch (e: Exception) {
       logger.error(e) { "Error while executing trigger update script for series: ${series.name}" }
       throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error triggering update: ${e.message}")
+    }
+  }
+
+  @PostMapping("v1/series/{seriesId}/move-to-light-novel")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun moveToLightNovel(
+    @PathVariable seriesId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    logger.info { "[move_to_light_novel] Move to Light Novel requested from WebUI for series: $seriesId" }
+
+    principal.user.checkContentRestriction(seriesId)
+
+    val series = seriesRepository.findByIdOrNull(seriesId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Series not found")
+
+    val currentLibrary = libraryRepository.findByIdOrNull(series.libraryId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Source library not found")
+
+    val targetLibrary = libraryRepository.findAll().firstOrNull { it.name == "ライトノベル" }
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Target library 'ライトノベル' not found")
+
+    val scriptFile = File("/app/komga_custom/move_to_light_novel.py")
+    val scriptPath = if (scriptFile.exists()) scriptFile.absolutePath else File("komga_custom/move_to_light_novel.py").absolutePath
+
+    val seriesPath = series.path.toString()
+    val currentLibraryName = currentLibrary.name
+    val targetLibraryRoot = targetLibrary.root.toURI().toPath().toString()
+
+    try {
+      val command = mutableListOf("python3", scriptPath, seriesPath, currentLibraryName, targetLibraryRoot)
+      val processBuilder = ProcessBuilder(command)
+      processBuilder.redirectErrorStream(true)
+      val process = processBuilder.start()
+      val reader = process.inputStream.bufferedReader()
+      val output = reader.readText()
+      val exitCode = process.waitFor()
+
+      if (exitCode == 0) {
+        logger.info { "[move_to_light_novel] Successfully moved series '${series.name}': $output" }
+        taskEmitter.scanLibrary(currentLibrary.id, priority = HIGHEST_PRIORITY)
+        taskEmitter.scanLibrary(targetLibrary.id, priority = HIGHEST_PRIORITY)
+      } else {
+        logger.error { "[move_to_light_novel] Failed to move series '${series.name}', exit code: $exitCode, output: $output" }
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, output.trim())
+      }
+    } catch (e: Exception) {
+      if (e is ResponseStatusException) throw e
+      logger.error(e) { "Error executing move_to_light_novel script for series: ${series.name}" }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error moving series: ${e.message}")
     }
   }
 }
