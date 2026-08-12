@@ -38,6 +38,7 @@
       @edit="editMultipleBooks"
       @delete="deleteBooks"
       @push-to-kindle="pushSelectedToKindle"
+      @move-to-import="moveSelectedToImport"
     />
 
     <library-navigation v-if="$vuetify.breakpoint.smAndDown" :libraryId="libraryId" bottom-navigation/>
@@ -683,6 +684,23 @@ export default Vue.extend({
         } catch (e) {
           this.$store.dispatch('snackbar/show', {
             message: `Failed to send '${book.metadata.title}': ${e.message}`,
+            color: 'error',
+          })
+        }
+      }
+      this.selectedBooks = []
+    },
+    async moveSelectedToImport () {
+      for (const book of this.selectedBooks) {
+        try {
+          await this.$komgaBooks.moveToImport(book.id)
+          this.$store.dispatch('snackbar/show', {
+            message: `Move to Import directory initiated for book '${book.metadata.title}'`,
+            color: 'success',
+          })
+        } catch (e) {
+          this.$store.dispatch('snackbar/show', {
+            message: `Failed to move '${book.metadata.title}' to Import: ${e.message}`,
             color: 'error',
           })
         }

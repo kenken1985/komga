@@ -214,6 +214,16 @@
                 </v-col>
 
                 <v-col cols="auto">
+                  <v-btn title="TO IMPORT"
+                         small
+                         @click="moveToImport"
+                         :disabled="!canDownload">
+                    <v-icon left small>mdi-book-arrow-right</v-icon>
+                    TO IMPORT
+                  </v-btn>
+                </v-col>
+
+                <v-col cols="auto">
                   <v-btn :title="$t('browse_book.download_file')"
                          small
                          :disabled="!canDownload"
@@ -266,6 +276,16 @@
             >
               <v-icon left small>mdi-incognito</v-icon>
               {{ $t('common.read') }}
+            </v-btn>
+          </v-col>
+
+          <v-col cols="auto">
+            <v-btn title="TO IMPORT"
+                   small
+                   @click="moveToImport"
+                   :disabled="!canDownload">
+              <v-icon left small>mdi-book-arrow-right</v-icon>
+              TO IMPORT
             </v-btn>
           </v-col>
 
@@ -716,6 +736,21 @@ export default Vue.extend({
         .then(() => {
           this.$store.dispatch('snackbar/show', {
             message: 'Book has been sent to Kindle',
+            color: 'success',
+          })
+        })
+        .catch(e => {
+          this.$store.dispatch('snackbar/show', {
+            message: e.message,
+            color: 'error',
+          })
+        })
+    },
+    moveToImport () {
+      this.$komgaBooks.moveToImport(this.book.id)
+        .then(() => {
+          this.$store.dispatch('snackbar/show', {
+            message: 'Book move to Import directory initiated successfully',
             color: 'success',
           })
         })

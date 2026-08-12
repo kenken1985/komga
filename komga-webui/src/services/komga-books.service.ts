@@ -330,4 +330,16 @@ export default class KomgaBooksService {
       throw new Error(msg)
     }
   }
+
+  async moveToImport(bookId: string) {
+    try {
+      await this.http.post(`${API_BOOKS}/${bookId}/move-to-import`)
+    } catch (e) {
+      let msg = `An error occurred while trying to move book '${bookId}' to Import`
+      if (e.response && e.response.data && e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
 }

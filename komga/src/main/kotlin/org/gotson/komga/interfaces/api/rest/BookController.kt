@@ -30,6 +30,7 @@ import org.gotson.komga.domain.model.ThumbnailBook
 import org.gotson.komga.domain.persistence.BookMetadataRepository
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.HistoricalEventRepository
+import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.ReadListRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -94,6 +95,8 @@ import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
+import kotlin.io.path.toPath
+import java.io.File
 import java.lang.ProcessBuilder
 import java.nio.file.NoSuchFileException
 import java.time.LocalDate
@@ -114,6 +117,7 @@ class BookController(
   private val bookDtoRepository: BookDtoRepository,
   private val readListRepository: ReadListRepository,
   private val seriesRepository: SeriesRepository,
+  private val libraryRepository: LibraryRepository,
   private val contentDetector: ContentDetector,
   private val imageAnalyzer: ImageAnalyzer,
   private val eventPublisher: ApplicationEventPublisher,
@@ -917,5 +921,59 @@ class BookController(
       }
     }
     return 0L // Default to 0 if not found
+  }
+
+  @PostMapping("api/v1/books/{bookId}/move-to-import")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun moveToImport(
+    @PathVariable bookId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    logger.info { "[move_to_import] Move to Import requested from WebUI for book: $bookId" }
+
+    contentRestrictionChecker.checkContentRestriction(principal.user, bookId)
+
+    val book = bookRepository.findByIdOrNull(bookId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found")
+
+    val currentLibrary = libraryRepository.findByIdOrNull(book.libraryId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Source library not found")
+
+    val scriptFile = File("/app/komga_custom/move_to_import.py")
+    val scriptPath = if (scriptFile.exists()) scriptFile.absolutePath else File("komga_custom/move_to_import.py").absolutePath
+
+    // Convert URL -> URI -> Path to properly handle URI encoding (like %20 spaces) and OS-specific separators
+    val bookPath = book.url.toURI().toPath().toString()
+    val currentLibraryName = currentLibrary.name
+    val targetDir = "/data/MANGA_IMPORT"
+
+    try {
+      val command = mutableListOf("python3", scriptPath, bookPath, currentLibraryName, targetDir)
+      val processBuilder = ProcessBuilder(command)
+      processBuilder.redirectErrorStream(true)
+      val process = processBuilder.start()
+      val reader = process.inputStream.bufferedReader()
+      val output = reader.readText()
+      val exitCode = process.waitFor()
+
+      if (exitCode == 0) {
+        logger.info { "[move_to_import] Successfully moved book '${book.name}': $output" }
+        
+        // Scan source library to clean up missing book
+        taskEmitter.scanLibrary(currentLibrary.id, priority = HIGHEST_PRIORITY)
+        
+        // If targetDir maps to a registered library in Komga, scan it here as well:
+        libraryRepository.findAll().firstOrNull { it.root.toURI().toPath().toString() == targetDir }?.let { targetLib ->
+          taskEmitter.scanLibrary(targetLib.id, priority = HIGHEST_PRIORITY)
+        }
+      } else {
+        logger.error { "[move_to_import] Failed to move book '${book.name}', exit code: $exitCode, output: $output" }
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, output.trim())
+      }
+    } catch (e: Exception) {
+      if (e is ResponseStatusException) throw e
+      logger.error(e) { "Error executing move_to_import script for book: ${book.name}" }
+      throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error moving book: ${e.message}")
+    }
   }
 }

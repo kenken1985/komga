@@ -34,6 +34,15 @@
         </v-tooltip>
       </v-btn>
 
+      <v-btn icon @click="moveToImport" v-if="kind === 'books' || kind === 'series'">
+        <v-tooltip bottom>
+          <template v-slot:activator="{ on }">
+            <v-icon v-on="on">mdi-book-arrow-right</v-icon>
+          </template>
+          <span>TO IMPORT</span>
+        </v-tooltip>
+      </v-btn>
+
       <v-btn icon @click="markRead" v-if="kind === 'books' || kind === 'series'">
         <v-tooltip bottom>
           <template v-slot:activator="{ on }">
@@ -167,6 +176,9 @@ export default Vue.extend({
     },
     pushToKindle () {
       this.$emit('push-to-kindle')
+    },
+    moveToImport () {
+      this.$emit('move-to-import')
     },
   },
 })
