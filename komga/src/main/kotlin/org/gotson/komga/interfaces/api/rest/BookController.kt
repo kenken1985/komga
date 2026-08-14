@@ -94,6 +94,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.request.ServletWebRequest
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.server.ResponseStatusException
 import kotlin.io.path.toPath
 import java.io.File
@@ -125,7 +126,9 @@ class BookController(
   private val webPubGenerator: WebPubGenerator,
   private val contentRestrictionChecker: ContentRestrictionChecker,
   private val commonBookController: CommonBookController,
+  webClientBuilder: WebClient.Builder,
 ) {
+  private val webClient: WebClient = webClientBuilder.build()
   @Deprecated("use /v1/books/list instead")
   @PageableAsQueryParam
   @GetMapping("api/v1/books")
@@ -784,143 +787,32 @@ class BookController(
     @PathVariable bookId: String,
     @AuthenticationPrincipal principal: KomgaPrincipal,
   ) {
-    // Immediate feedback when the button is pressed
-    logger.info { "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting..." }
+    val automangaUrl = System.getenv("AUTOMANGA_URL")
+      ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "AUTOMANGA_URL environment variable not set")
 
     bookRepository.findByIdOrNull(bookId)?.let { book ->
       contentRestrictionChecker.checkContentRestriction(principal.user, book)
 
-      val media = mediaRepository.findById(book.id)
-      if (media.status != Media.Status.READY) {
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book is not ready")
-      }
-
-      // Create initialization event
-      val series = book.seriesId?.let { seriesRepository.findByIdOrNull(it) }
-      if (series != null) {
-        historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleInitialized(book, series))
-        logger.info { "[push_to_kindle] Created initialization event for book: $bookId" }
-      } else {
-        logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping initialization event" }
-      }
-
       try {
-        val processBuilder = ProcessBuilder("python3", "/app/komga_custom/push_to_kindle.py", book.url.path)
-        processBuilder.redirectErrorStream(true)
-        val process = processBuilder.start()
-        val reader = process.inputStream.bufferedReader()
-        val preface = "[push_to_kindle] Upload requested from WebUI for book: $bookId. Starting...\n"
-        val output = reader.readText()
-        logger.info { "Push to kindle script output: $preface$output" }
-        val exitCode = process.waitFor()
-        
-         if (exitCode == 0) {
-           // Parse Kindle path and processing time from output
-           val kindlePath = extractKindlePathFromOutput(output)
-           val processingTime = extractProcessingTimeFromOutput(output)
-           if (kindlePath != null) {
-             // Create success event for successful push
-             if (series != null) {
-               historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, kindlePath, processingTime))
-             } else {
-               logger.warn { "[push_to_kindle] Could not find series for book: $bookId, skipping success event" }
-             }
-             logger.info { "[push_to_kindle] Successfully created success event for book: $bookId, Kindle path: $kindlePath, Processing time: ${processingTime}s" }
-             
-             // Mark book as read after successful push to Kindle
-             bookLifecycle.markReadProgressCompleted(book.id, principal.user)
-             logger.info { "[push_to_kindle] Marked book as read: $bookId" }
-           } else {
-             logger.warn { "[push_to_kindle] Push succeeded but could not extract Kindle path from output for book: $bookId" }
-             // Create success event even without kindle path
-             if (series != null) {
-               historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleSuccess(book, series, "", processingTime))
-             }
-             
-             // Mark book as read after successful push to Kindle (even without kindle path)
-             bookLifecycle.markReadProgressCompleted(book.id, principal.user)
-             logger.info { "[push_to_kindle] Marked book as read: $bookId" }
-           }
-         } else {
-          // Script failed - parse error from output
-          val errorMessage = extractErrorFromOutput(output) ?: "Script failed with exit code: $exitCode"
-          logger.error { "[push_to_kindle] Script failed for book: $bookId, exit code: $exitCode, error: $errorMessage" }
-          // Create failure event
-          if (series != null) {
-            historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
-          }
-          throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Push to kindle script failed: $errorMessage")
+        val response = webClient
+          .post()
+          .uri("$automangaUrl/api/kindle/push/books")
+          .contentType(MediaType.APPLICATION_JSON)
+          .bodyValue(mapOf("book_ids" to listOf(book.id)))
+          .retrieve()
+          .toBodilessEntity()
+          .block()
+
+        if (response?.statusCode?.isError == true) {
+          throw ResponseStatusException(response.statusCode, "Failed to push to kindle")
         }
+      } catch (e: ResponseStatusException) {
+        throw e
       } catch (e: Exception) {
-        logger.error(e) { "Error while executing push to kindle script for book: $bookId" }
-        // Create failure event
-        val errorMessage = e.message ?: "Script execution failed: ${e::class.simpleName}"
-        if (series != null) {
-          historicalEventRepository.insert(HistoricalEvent.BookPushedToKindleFailed(book, series, errorMessage))
-        }
-        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while executing push to kindle script: $errorMessage")
+        logger.error(e) { "Error while pushing book to kindle: $bookId" }
+        throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Error while pushing to kindle: ${e.message}")
       }
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
-  }
-
-  private fun extractKindlePathFromOutput(output: String): String? {
-    // Extract the target folder from the output
-    // Look for structured output pattern: HISTORICAL_EVENT_KINDLE_PATH:folder_name
-    val lines = output.split("\n")
-    for (line in lines) {
-      if (line.startsWith("HISTORICAL_EVENT_KINDLE_PATH:")) {
-        return line.substringAfter("HISTORICAL_EVENT_KINDLE_PATH:").trim()
-      }
-      // Fallback to old patterns for backward compatibility
-      if (line.contains("Successfully uploaded") && line.contains("to Kindle folder:")) {
-        val match = Regex("Successfully uploaded .* to Kindle folder: (.*)").find(line)
-        if (match != null) {
-          return match.groupValues[1].trim()
-        }
-      }
-      if (line.contains("Multiple files detected, using series folder:")) {
-        val match = Regex("Multiple files detected, using series folder: (.*)").find(line)
-        if (match != null) {
-          return match.groupValues[1].trim()
-        }
-      }
-    }
-    return null
-  }
-
-  private fun extractErrorFromOutput(output: String): String? {
-    // Extract error information from the output
-    val lines = output.split("\n")
-    for (line in lines) {
-      if (line.startsWith("SCRIPT_ERROR_MESSAGE:")) {
-        return line.substringAfter("SCRIPT_ERROR_MESSAGE:").trim()
-      }
-      if (line.startsWith("KCC_ERROR_MESSAGE:")) {
-        return line.substringAfter("KCC_ERROR_MESSAGE:").trim()
-      }
-      if (line.startsWith("FILE_ERROR_MESSAGE:")) {
-        return line.substringAfter("FILE_ERROR_MESSAGE:").trim()
-      }
-    }
-    return null
-  }
-
-  private fun extractProcessingTimeFromOutput(output: String): Long {
-    // Extract processing time from the output
-    // Look for structured output pattern: HISTORICAL_EVENT_PROCESSING_TIME:seconds
-    val lines = output.split("\n")
-    for (line in lines) {
-      if (line.startsWith("HISTORICAL_EVENT_PROCESSING_TIME:")) {
-        val timeStr = line.substringAfter("HISTORICAL_EVENT_PROCESSING_TIME:").trim()
-        return try {
-          timeStr.toLong()
-        } catch (e: NumberFormatException) {
-          logger.warn { "[push_to_kindle] Invalid processing time format: $timeStr" }
-          0L
-        }
-      }
-    }
-    return 0L // Default to 0 if not found
   }
 
   @PostMapping("api/v1/books/{bookId}/move-to-import")

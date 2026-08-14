@@ -59,9 +59,6 @@ def get_files_list_from_webui() -> List[str]:
     decoded_paths = [decode_url_path(path) for path in sys.argv[1:]]
     return decoded_paths
 
-
-
-
 def extract_series_name_from_path(file_path: str) -> str:
     """
     Extract series name from file path by looking for directory structure.
